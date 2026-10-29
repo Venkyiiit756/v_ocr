@@ -8,8 +8,31 @@ Complies with IEEE 1016 LLD v2.1 and ISO 29119 Test Strategy v2.2.
 """
 
 import re
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
+
+try:
+    from rapidfuzz import distance as rf_distance
+except ImportError:
+    class DummyLev:
+        @staticmethod
+        def distance(s1, s2):
+            if len(s1) < len(s2):
+                return DummyLev.distance(s2, s1)
+            if len(s2) == 0:
+                return len(s1)
+            prev = list(range(len(s2) + 1))
+            for i, c1 in enumerate(s1):
+                curr = [i + 1]
+                for j, c2 in enumerate(s2):
+                    ins = prev[j + 1] + 1
+                    dels = curr[j] + 1
+                    subs = prev[j] + (c1 != c2)
+                    curr.append(min(ins, dels, subs))
+                prev = curr
+            return prev[-1]
+    class rf_distance:
+        Levenshtein = DummyLev
 
 # -------------------------------------------------------------
 # PROTECTED LINGUISTIC REGISTRIES & DICTIONARIES
@@ -317,6 +340,95 @@ def classify_demographic_group(voter_name: str, rel_name: str) -> str:
     return 'T'
 
 
+def is_fuzzy_token(word: str, targets: List[str], max_dist: int = 2) -> bool:
+    w = re.sub(r'[^A-Za-z]', '', word).upper()
+    if not w or len(w) < 3:
+        return False
+    for t in targets:
+        if w == t:
+            return True
+        lim = 1 if len(t) <= 4 and len(w) <= 4 else max_dist
+        if rf_distance.Levenshtein.distance(w, t) <= lim:
+            return True
+    return False
+
+
+def match_fuzzy_relation(clean_tok: str) -> str:
+    w = clean_tok.upper()
+    if w.startswith(('H', 'A')) and (w == 'HUSBAND' or rf_distance.Levenshtein.distance(w, 'HUSBAND') <= 2 or rf_distance.Levenshtein.distance(w, 'HUSBANDS') <= 2):
+        return 'Husband'
+    if w.startswith('F') and (w == 'FATHER' or rf_distance.Levenshtein.distance(w, 'FATHER') <= 2 or rf_distance.Levenshtein.distance(w, 'FATHERS') <= 2):
+        return 'Father'
+    if w.startswith('M') and (w == 'MOTHER' or rf_distance.Levenshtein.distance(w, 'MOTHER') <= 2 or rf_distance.Levenshtein.distance(w, 'MOTHERS') <= 2):
+        return 'Mother'
+    if w.startswith('G') and (w == 'GUARDIAN' or rf_distance.Levenshtein.distance(w, 'GUARDIAN') <= 2):
+        return 'Guardian'
+    if w.startswith('O') and (w == 'OTHER' or rf_distance.Levenshtein.distance(w, 'OTHER') <= 2 or rf_distance.Levenshtein.distance(w, 'OTHERS') <= 2):
+        return 'Other'
+    return 'Other'
+
+
+def parse_line_anchor(line: str) -> Tuple[str, str, Optional[str]]:
+    """
+    Production Fuzzy Line Classifier.
+    Classifies a raw card line into (anchor_type, remainder_text, subtype).
+    anchor_type in ('NAME', 'REL', 'HOUSE', 'AGE', 'CONTINUATION', 'EMPTY')
+    """
+    raw_l = line.strip()
+    if not raw_l:
+        return 'EMPTY', '', None
+    l = raw_l.strip(' \t\r\n-_.,:;~|=+*?')
+    if not l:
+        return 'EMPTY', '', None
+        
+    parts = re.split(r'[:*+=;>?\}\]~|]+|\s+[-–—]\s+', l, maxsplit=1)
+    header = parts[0].strip()
+    rem = parts[1].strip() if len(parts) > 1 else ''
+    tokens = header.split()
+    if not tokens:
+        return 'CONTINUATION', raw_l, None
+    first_tok = re.sub(r'[^A-Za-z]', '', tokens[0]).upper()
+    
+    # Check AGE / VAYASSU (MUST have digits or gender token or vayassu)
+    has_digit = bool(re.search(r'\d', raw_l))
+    has_gender = bool(re.search(r'\b(?:Gender|Gander|Gencler|Ganclar|Lingamu|పురుష|స్త్రీ|మహిళ)\b', raw_l, re.I))
+    if (has_digit or has_gender) and is_fuzzy_token(first_tok, ['AGE', 'ADE', 'AQE', 'VAYASSU']):
+        return 'AGE', raw_l, None
+        
+    # Check Telugu script anchors
+    if re.search(r'పేరు|ఓటరు\s*పేరు', header):
+        return 'NAME', rem or ' '.join(tokens[1:]), None
+    if re.search(r'తండ్రి', header):
+        return 'REL', rem or ' '.join(tokens[1:]), 'Father'
+    if re.search(r'భర్త', header):
+        return 'REL', rem or ' '.join(tokens[1:]), 'Husband'
+    if re.search(r'తల్లి', header):
+        return 'REL', rem or ' '.join(tokens[1:]), 'Mother'
+    if re.search(r'ఇంటి|డోర్', header):
+        return 'HOUSE', rem or ' '.join(tokens[1:]), None
+        
+    # Check NAME
+    if is_fuzzy_token(first_tok, ['NAME', 'MAME', 'MANE', 'PERU', 'VOTER']):
+        return 'NAME', rem or ' '.join(tokens[1:]), None
+        
+    # Check RELATIVE
+    if first_tok.startswith(('F', 'H', 'A', 'M', 'G', 'O')) and any(
+        is_fuzzy_token(first_tok, [tgt, tgt + 'S']) for tgt in ['FATHER', 'HUSBAND', 'MOTHER', 'GUARDIAN', 'OTHER']
+    ):
+        return 'REL', rem or ' '.join(tokens[1:]), match_fuzzy_relation(first_tok)
+        
+    # Check HOUSE
+    if is_fuzzy_token(first_tok, ['HOUSE', 'HOWSE', 'HOUS', 'FHOUSE', 'FLOUSE', 'LOUSE', 'OUSE', 'DOOR', 'DNO', 'HNO', 'FLAT', 'PLOT']) or first_tok in ('DNO', 'HNO', 'D.NO', 'H.NO'):
+        return 'HOUSE', rem or ' '.join(tokens[1:]), None
+        
+    # Check multi-token header e.g. 'e Number : 1-1-32'
+    if len(tokens) > 1 and is_fuzzy_token(tokens[1], ['NUMBER', 'NUMBAR', 'NUM', 'NO']):
+        if is_fuzzy_token(first_tok, ['HOUSE', 'HOWSE', 'DOOR', 'E', 'H', 'F']):
+            return 'HOUSE', rem or ' '.join(tokens[2:]), None
+            
+    return 'CONTINUATION', raw_l, None
+
+
 class VoterCardParser:
     """
     Production Field Extractor & Lineage Annotator for Individual Voter Cards.
@@ -517,28 +629,49 @@ class VoterCardParser:
             m_house = re.match(r'^(?:[\-\._\s]*[Ff]?|[eE]\s*)?(?:[HhlI1|Ff]?[\-]?[o0eau]us[ea]?|Flous[ea]?|Fious[ea]?|Howse|Inti|D\.?No|H\.?No|House|Hous|Hse|Door|Number|Numbar|Num|No|ఇంటి\s*(?:సంఖ్య|నెం|నంబరు)?|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]*(.*)', l, re.I)
             m_age = re.search(r'\b(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b', l, re.I)
             
+            # Determine line classification via Fast Regex OR Scalable Fuzzy Classifier
+            atype = 'CONTINUATION'
+            rem = ''
+            subtype = None
+            
             if m_name and state == 'INIT':
-                state = 'NAME'
+                atype = 'NAME'
                 rem = m_name.group(1).strip()
+            elif m_rel and state in ('INIT', 'NAME'):
+                atype = 'REL'
+                rt = m_rel.group(1).lower()
+                if rt.startswith('f') or 'తండ్రి' in rt: subtype = 'Father'
+                elif rt.startswith('h') or rt.startswith('a') or 'భర్త' in rt: subtype = 'Husband'
+                elif rt.startswith('m') or 'తల్లి' in rt: subtype = 'Mother'
+                elif rt.startswith('g') or 'సంరక్ష' in rt: subtype = 'Guardian'
+                else: subtype = 'Other'
+                rem = m_rel.group(2).strip()
+            elif m_house and state in ('NAME', 'REL'):
+                atype = 'HOUSE'
+                rem = m_house.group(1).strip()
+            elif m_age and state in ('NAME', 'REL', 'HOUSE'):
+                atype = 'AGE'
+            else:
+                f_type, f_rem, f_sub = parse_line_anchor(l)
+                if f_type != 'CONTINUATION' and f_type != 'EMPTY':
+                    atype = f_type
+                    rem = f_rem
+                    subtype = f_sub
+            
+            if atype == 'NAME' and state == 'INIT':
+                state = 'NAME'
                 if rem: voter_lines.append(rem)
                 continue
-            elif m_rel and state in ('INIT', 'NAME'):
+            elif atype == 'REL' and state in ('INIT', 'NAME'):
                 state = 'REL'
-                rt = m_rel.group(1).lower()
-                if rt.startswith('f') or 'తండ్రి' in rt: rel_type = 'Father'
-                elif rt.startswith('h') or rt.startswith('a') or 'భర్త' in rt: rel_type = 'Husband'
-                elif rt.startswith('m') or 'తల్లి' in rt: rel_type = 'Mother'
-                elif rt.startswith('g') or 'సంరక్ష' in rt: rel_type = 'Guardian'
-                else: rel_type = 'Other'
-                rem = m_rel.group(2).strip()
+                rel_type = subtype or 'Other'
                 if rem: rel_lines.append(rem)
                 continue
-            elif m_house and state in ('INIT', 'NAME', 'REL'):
+            elif atype == 'HOUSE' and state in ('NAME', 'REL'):
                 state = 'HOUSE'
-                rem = m_house.group(1).strip()
                 if rem: house_lines.append(rem)
                 continue
-            elif m_age:
+            elif atype == 'AGE' and state in ('NAME', 'REL', 'HOUSE'):
                 state = 'AGE'
                 continue
                 

@@ -71,6 +71,37 @@ def extract_and_verify_part001():
     t_extract = time.time() - t_start
     print(f"\n[Extraction Phase Complete] Extracted {len(records)} cards in {t_extract:.2f}s ({len(records)/max(t_extract, 0.1):.1f} cards/sec)", flush=True)
 
+    # Apply latest scalable fuzzy parser normalization
+    from src.electoral_engine.parser import VoterCardParser
+    p = VoterCardParser()
+    for r in records:
+        dump = r.get('raw_ocr_dump') or r.get('raw_text', '')
+        meta = {
+            'ac_no': r.get('assembly_constituency_no', 38),
+            'part_no': r.get('assembly_part_no', 1),
+            'box_index': r.get('box_index', 1),
+            'page_no': r.get('page_no', 1),
+            'source_pdf_filename': r.get('source_pdf_filename', 'roll_part_1.pdf'),
+            'source_pdf_sha256': r.get('source_pdf_sha256', ''),
+            'bbox_pts': r.get('bbox_pts', []),
+            'mean_card_conf': r.get('mean_card_conf', 0.90),
+            'status': r.get('status', 'Active')
+        }
+        reparsed = p.parse_card(dump, fallback_sno=r.get('booth_sno'), metadata=meta)
+        r['voter_name'] = reparsed['voter_name']
+        r['voter_name_clean'] = reparsed['voter_name_clean']
+        r['voter_name_en'] = reparsed['voter_name_en']
+        r['rel_type'] = reparsed['rel_type']
+        r['rel_name'] = reparsed['rel_name']
+        r['rel_name_clean'] = reparsed['rel_name_clean']
+        r['rel_name_en'] = reparsed['rel_name_en']
+        r['door_no'] = reparsed['door_no']
+        r['door_no_clean'] = reparsed['door_no_clean']
+        r['normalized_door_no'] = reparsed['normalized_door_no']
+        r['household_cluster_key'] = reparsed['household_cluster_key']
+        r['age'] = reparsed['age']
+        r['gender'] = reparsed['gender']
+
     # 3. Apply Unified 3-Tier Multi-Scale Proximity Surname Restoration
     t_recon_start = time.time()
     from src.electoral_engine.reconciler import ElectoralReconciler

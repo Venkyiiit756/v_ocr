@@ -10,6 +10,7 @@ numpy>=1.26.0
 pytesseract>=0.3.10
 
 # Data Processing & Persistence
+rapidfuzz>=3.0.0
 pandas>=2.2.0
 openpyxl>=3.1.2
 pyarrow>=15.0.0
