@@ -158,6 +158,10 @@ class ElectoralReconciler:
         for r in records:
             v_name = r.get('voter_name_en') or r.get('voter_name_clean') or r.get('voter_name', '')
             r_name = r.get('rel_name_en') or r.get('rel_name_clean') or r.get('rel_name', '')
+            if not r.get('voter_name_en') and v_name:
+                r['voter_name_en'] = v_name
+            if not r.get('rel_name_en') and r_name:
+                r['rel_name_en'] = r_name
 
             if not v_name or not r_name or v_name in ('-', '') or r_name in ('-', ''):
                 continue

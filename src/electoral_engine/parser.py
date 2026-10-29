@@ -548,10 +548,12 @@ class VoterCardParser:
             # Demographics
             'voter_name': voter_name_clean,
             'voter_name_clean': voter_name_clean,
+            'voter_name_en': voter_name_clean,
             'voter_name_raw': voter_name_raw,
             'rel_type': rel_type,
             'rel_name': rel_name_clean,
             'rel_name_clean': rel_name_clean,
+            'rel_name_en': rel_name_clean,
             'rel_name_raw': rel_name_raw,
             'door_no': door_no_clean,
             'door_no_clean': door_no_clean,

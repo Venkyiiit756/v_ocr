@@ -87,13 +87,13 @@ class ElectoralExporter:
                     if col == 'epic_no':
                         val = r.get('EPIC No') or r.get('epic') or '-'
                     elif col == 'voter_name_en':
-                        val = r.get('Voter Name (English)') or r.get('name') or '-'
+                        val = r.get('Voter Name (English)') or r.get('voter_name_clean') or r.get('voter_name') or r.get('name') or '-'
                     elif col == 'rel_name_en':
-                        val = r.get('Father / Husband / Guardian Name') or r.get('relative_name') or '-'
+                        val = r.get('Father / Husband / Guardian Name') or r.get('rel_name_clean') or r.get('rel_name') or r.get('relative_name') or '-'
                     elif col == 'rel_type':
-                        val = r.get('Relationship Type') or r.get('relationship') or '-'
+                        val = r.get('Relationship Type') or r.get('rel_type') or r.get('relationship') or '-'
                     elif col == 'door_no':
-                        val = r.get('Door / House No') or r.get('house_no') or '-'
+                        val = r.get('Door / House No') or r.get('door_no_clean') or r.get('door_no') or r.get('house_no') or '-'
                     elif col == 'age':
                         val = r.get('Age')
                     elif col == 'gender':

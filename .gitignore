@@ -71,8 +71,10 @@ crops/
 *.7z
 
 # ==========================================
-# Pipeline State, Logs & Cache files
+# Data Lake Deliverables & Cache
 # ==========================================
+data_lake/*
+!data_lake/benchmark_721k_summary.json
 cache_*.json
 *_pipeline_state.json
 *.log
