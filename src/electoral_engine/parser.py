@@ -53,6 +53,23 @@ RE_AGE_BOTTOM_UP = re.compile(
     re.IGNORECASE
 )
 
+def extract_valid_age(ocr_text: str) -> Optional[int]:
+    """
+    Extracts elector age without swallowing the leading '1' in 18 and 19-year-olds.
+    Searches bottom-up to avoid collisions with names like Nageswararao.
+    """
+    if not ocr_text:
+        return None
+    for match in reversed(list(RE_AGE_BOTTOM_UP.finditer(ocr_text))):
+        raw_digits = match.group(1)
+        val = int(raw_digits)
+        if val > 110 and len(raw_digits) == 3:
+            if raw_digits[0] in ('1', '7') and 18 <= int(raw_digits[1:]) <= 110:
+                val = int(raw_digits[1:])
+        if 18 <= val <= 110:
+            return val
+    return None
+
 RE_DOOR_RAW = re.compile(
     r'(?:House\s*(?:No|Number|\#)?|Door\s*(?:No|Number|\#)?|[DH]\.?\s*No\.?|'
     r'ఇంటి\s*నెం\.?|డోర్\s*నెం\.?)\s*[:=\-]?\s*([0-9A-Za-z\-\/]+)', 

@@ -63,16 +63,18 @@ class VoterCardDetector:
     Robust voter card boundary detector for scanned ECI rolls.
     """
     def __init__(self, 
-                 min_width_ratio: float = 0.20, 
-                 max_width_ratio: float = 0.40,
-                 min_height_ratio: float = 0.05, 
-                 max_height_ratio: float = 0.16,
-                 target_dpi: int = 300):
+                 min_width_ratio: float = 0.18, 
+                 max_width_ratio: float = 0.45,
+                 min_height_ratio: float = 0.04, 
+                 max_height_ratio: float = 0.22,
+                 target_dpi: int = 300,
+                 enable_grid_fallback: bool = True):
         self.min_w = min_width_ratio
         self.max_w = max_width_ratio
         self.min_h = min_height_ratio
         self.max_h = max_height_ratio
         self.target_dpi = target_dpi
+        self.enable_grid_fallback = enable_grid_fallback
 
     def deskew_page(self, img_gray: np.ndarray, max_angle: float = 5.0) -> Tuple[np.ndarray, float]:
         """
@@ -89,7 +91,7 @@ class VoterCardDetector:
 
         angles = []
         for line in lines:
-            x1, y1, x2, y2 = line[0]
+            x1, y1, x2, y2 = line.reshape(-1)[:4]
             dx = x2 - x1
             dy = y2 - y1
             if abs(dx) > 0:
@@ -158,7 +160,10 @@ class VoterCardDetector:
 
         # If CV failed or partial page, check if we need 10x3 grid fallback
         if len(unique_boxes) == 0:
-            return []
+            if self.enable_grid_fallback:
+                unique_boxes = self.generate_grid_fallback(w_img, h_img)
+            else:
+                return []
 
         # 5. Apply Vertical Indic Subscript Padding (+15%)
         padded_boxes = []
@@ -170,6 +175,27 @@ class VoterCardDetector:
         # 6. Order in Row-Major Reading Order (Left to Right, Top to Bottom)
         ordered = self._order_boxes(padded_boxes, row_tolerance=int(h_img * 0.018))
         return ordered
+
+    def generate_grid_fallback(self, w_img: int, h_img: int, cols: int = 3, rows: int = 10) -> List[Tuple[int, int, int, int]]:
+        """Generates standard 3x10 grid bounding boxes when contour extraction finds 0 boxes."""
+        top_m = int(round(0.08 * h_img))
+        bot_m = int(round(0.06 * h_img))
+        left_m = int(round(0.04 * w_img))
+        right_m = int(round(0.04 * w_img))
+        
+        usable_w = w_img - left_m - right_m
+        usable_h = h_img - top_m - bot_m
+        
+        card_w = usable_w // cols
+        card_h = usable_h // rows
+        
+        fallback_boxes = []
+        for r in range(rows):
+            for c in range(cols):
+                x = left_m + c * card_w
+                y = top_m + r * card_h
+                fallback_boxes.append((x, y, card_w, card_h))
+        return fallback_boxes
 
     def _order_boxes(self, boxes: List[Tuple[int, int, int, int]], row_tolerance: int = 40) -> List[Tuple[int, int, int, int]]:
         rows = []
@@ -204,7 +230,7 @@ class VoterCardDetector:
 
         strike_lines = []
         for line in lines:
-            x1, y1, x2, y2 = line[0]
+            x1, y1, x2, y2 = line.reshape(-1)[:4]
             dx = x2 - x1
             dy = y2 - y1
             if abs(dx) > 0:
@@ -216,8 +242,8 @@ class VoterCardDetector:
             # Create directional morphological kernel to isolate strike line
             mask = np.zeros_like(card_gray)
             for line in strike_lines:
-                x1, y1, x2, y2 = line[0]
-                cv2.line(mask, (x1, y1), (x2, y2), 255, 3)
+                x1, y1, x2, y2 = line.reshape(-1)[:4]
+                cv2.line(mask, (int(x1), int(y1)), (int(x2), int(y2)), 255, 3)
             
             # Morphological subtraction restores underlying pixel gradients
             restored = cv2.add(card_gray, mask)

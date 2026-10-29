@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deip-ocr-worker
+  namespace: deip-production
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: deip-ocr-worker
+  template:
+    metadata:
+      labels:
+        app: deip-ocr-worker
+    spec:
+      containers:
+      - name: ocr-worker
+        image: deip/ocr-worker:v2.2.0
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://electoral_admin:$(POSTGRES_PASSWORD)@postgres.deip-production.svc.cluster.local:5432/electoral_db"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: deip-secrets
+              key: postgres-password
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "2Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: deip-ocr-worker-hpa
+  namespace: deip-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: deip-ocr-worker
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75

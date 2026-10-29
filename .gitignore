@@ -58,6 +58,10 @@ SIR_Revision_PDFs/
 *.tif
 *.tiff
 *.wav
+deip_cache_*.json
+partial_*.json
+test_tmp.pdf
+deliverables/
 *.mp3
 proof_images/
 crops/
