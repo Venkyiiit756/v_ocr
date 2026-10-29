@@ -69,13 +69,15 @@ def normalize_door_number(raw_door: str) -> str:
     if not raw_door:
         return "-"
     s = str(raw_door).strip().upper()
-    s = re.sub(r'\b(?:NO\s*J|NOJ|DEL|DELETED|CANCELLED)\b', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\b(?:NO\s*J|NOJ|DEL|DELETED|CANCELLED|PHOTO|AVAILABLE)\b', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'^(?:HOUSE\s*(?:NO|NUMBER|\#)?|DOOR\s*(?:NO|NUMBER|\#)?|[DH]\.?\s*NO\.?|DNO|HNO|ఇంటి\s*నెం\.?|డోర్\s*నెం\.?)\s*[:=\-\.]*\s*', '', s, flags=re.IGNORECASE)
     m = RE_DOOR_RAW.search(s)
     if m:
         s = m.group(1).strip()
     s = re.sub(r'[\\_.,;:|]+', '-', s)
     s = re.sub(r'--+', '-', s)
     s = re.sub(r'//+', '/', s)
+    s = re.sub(r'^(?:[DH]-NO-|NO-)', '', s, flags=re.IGNORECASE)
     s = re.sub(r'[^0-9A-Z\-\/]', '', s)
     s = s.strip('-/')
     if not any(ch.isdigit() for ch in s):
