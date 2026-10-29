@@ -81,13 +81,24 @@ def extract_valid_age(ocr_text: str) -> Optional[int]:
     Extracts elector age without swallowing the leading '1' in 18 and 19-year-olds.
     Searches bottom-up to avoid collisions with names like Nageswararao.
     Recovers dot-matrix slashed glyphs ('/' and '?' -> 7), optical separator slashes ('6/7' -> 67),
-    and character lookalikes ('5o' -> 50, '4%' -> 40, '3)' -> 30, '6d' -> 60, '-d4' -> 64).
+    and character lookalikes ('5o' -> 50, '4%' -> 40, '3)' -> 30, '6d' -> 60, '-d4' -> 64, 'BS' -> 85).
     """
     if not ocr_text:
         return None
         
+    # 1. Look for Age anchor and check remainder of line for explicit 2-digit age
+    m_anchor = re.search(r'\b(?:Age|Ag[e\?@aoc2]|Ade|Aqe|A96[a-z0-9]?|Vayassu|వయస్సు)\b([^\n\r]*)', ocr_text, re.I)
+    if m_anchor:
+        line_rem = m_anchor.group(1).split('Gender')[0].split('గెండర్')[0]
+        m_2d = re.findall(r'\b(1[8-9]|[2-9][0-9])\b', line_rem)
+        if m_2d:
+            for num in reversed(m_2d):
+                v = int(num)
+                if 18 <= v <= 110:
+                    return v
+                    
     patterns = [
-        r'(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b(?:[^\d\w\/\?]+|[il1t\?](?!\d))*([0-9A-Za-z\/\?\%\.\+\-\)\(]{1,6})',
+        r'(?:Age|Ag[e\?@aoc2]|Ade|Aqe|A96[a-z0-9]?|Vayassu)\b(?:[^\d\w\/\?]+|[il1t\?](?!\d))*([0-9A-Za-z\/\?\%\.\+\-\)\(]{1,6})',
         r'\b(?:Vayassu|వయస్సు)\s*[:=\-]?\s*([0-9\/\?]{2,3})'
     ]
     for pat in patterns:
@@ -106,6 +117,9 @@ def extract_valid_age(ocr_text: str) -> Optional[int]:
             raw = re.sub(r'^[dD]([0-9])', r'6\g<1>', raw)
             # 4% -> 40
             raw = raw.replace('%', '0')
+            # Transliterate optical letter pairs e.g. BS -> 85
+            if len(raw) == 2 and raw.isupper():
+                raw = raw.replace('B', '8').replace('S', '5').replace('O', '0').replace('I', '1').replace('L', '1')
             
             digits = re.sub(r'\D', '', raw)
             if digits.isdigit():
@@ -347,7 +361,9 @@ def is_fuzzy_token(word: str, targets: List[str], max_dist: int = 2) -> bool:
     for t in targets:
         if w == t:
             return True
-        lim = 1 if len(t) <= 4 and len(w) <= 4 else max_dist
+        if abs(len(w) - len(t)) > 1:
+            continue
+        lim = 1 if len(t) <= 5 or len(w) <= 4 else max_dist
         if rf_distance.Levenshtein.distance(w, t) <= lim:
             return True
     return False
@@ -357,9 +373,9 @@ def match_fuzzy_relation(clean_tok: str) -> str:
     w = clean_tok.upper()
     if w.startswith(('H', 'A')) and (w == 'HUSBAND' or rf_distance.Levenshtein.distance(w, 'HUSBAND') <= 2 or rf_distance.Levenshtein.distance(w, 'HUSBANDS') <= 2):
         return 'Husband'
-    if w.startswith('F') and (w == 'FATHER' or rf_distance.Levenshtein.distance(w, 'FATHER') <= 2 or rf_distance.Levenshtein.distance(w, 'FATHERS') <= 2):
+    if w.startswith(('F', 'P')) and (w == 'FATHER' or rf_distance.Levenshtein.distance(w, 'FATHER') <= 2 or rf_distance.Levenshtein.distance(w, 'FATHERS') <= 2):
         return 'Father'
-    if w.startswith('M') and (w == 'MOTHER' or rf_distance.Levenshtein.distance(w, 'MOTHER') <= 2 or rf_distance.Levenshtein.distance(w, 'MOTHERS') <= 2):
+    if w.startswith(('M', 'V', 'W')) and (w == 'MOTHER' or rf_distance.Levenshtein.distance(w, 'MOTHER') <= 2 or rf_distance.Levenshtein.distance(w, 'MOTHERS') <= 2 or 'VOTH' in w or 'WOTH' in w):
         return 'Mother'
     if w.startswith('G') and (w == 'GUARDIAN' or rf_distance.Levenshtein.distance(w, 'GUARDIAN') <= 2):
         return 'Guardian'
@@ -407,15 +423,15 @@ def parse_line_anchor(line: str) -> Tuple[str, str, Optional[str]]:
     if re.search(r'ఇంటి|డోర్', header):
         return 'HOUSE', rem or ' '.join(tokens[1:]), None
         
+    # Check RELATIVE (must precede generic NAME check when token matches relation anchor or ends with THER/BAND)
+    if (first_tok.startswith(('F', 'H', 'A', 'M', 'G', 'O', 'V', 'W')) and any(
+        is_fuzzy_token(first_tok, [tgt, tgt + 'S']) for tgt in ['FATHER', 'HUSBAND', 'MOTHER', 'GUARDIAN', 'OTHER']
+    )) or first_tok.endswith(('THER', 'THERS', 'BAND', 'BANDS')):
+        return 'REL', rem or ' '.join(tokens[1:]), match_fuzzy_relation(first_tok)
+        
     # Check NAME
     if is_fuzzy_token(first_tok, ['NAME', 'MAME', 'MANE', 'PERU', 'VOTER']):
         return 'NAME', rem or ' '.join(tokens[1:]), None
-        
-    # Check RELATIVE
-    if first_tok.startswith(('F', 'H', 'A', 'M', 'G', 'O')) and any(
-        is_fuzzy_token(first_tok, [tgt, tgt + 'S']) for tgt in ['FATHER', 'HUSBAND', 'MOTHER', 'GUARDIAN', 'OTHER']
-    ):
-        return 'REL', rem or ' '.join(tokens[1:]), match_fuzzy_relation(first_tok)
         
     # Check HOUSE
     if is_fuzzy_token(first_tok, ['HOUSE', 'HOWSE', 'HOUS', 'FHOUSE', 'FLOUSE', 'LOUSE', 'OUSE', 'DOOR', 'DNO', 'HNO', 'FLAT', 'PLOT']) or first_tok in ('DNO', 'HNO', 'D.NO', 'H.NO'):

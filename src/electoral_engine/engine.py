@@ -322,6 +322,7 @@ class ElectoralPipelineEngine:
                         recs = fut.result()
                         all_records.extend(recs)
                         page_cache[str(pno)] = recs
+                        print(f"[Page Progress] Processed page {pno + 1}/{total_pages} ({len(recs)} cards) [{len(page_cache)}/{content_page_count} pages complete, {len(all_records)} cards extracted]", flush=True)
                         tmp_part = f"{partial_file}.tmp"
                         with open(tmp_part, 'w', encoding='utf-8') as pf:
                             json.dump(page_cache, pf, ensure_ascii=False)
