@@ -1,12 +1,12 @@
 # High-Level Architecture Design (HLD) & System Architecture Description
-## Enterprise Distributed Electoral Intelligence Platform (DEIP V2.0)
+## Enterprise Distributed Electoral Intelligence Platform (DEIP V2.1)
 
-**Document Reference:** DEIP-HLD-V2.0-DEFINITIVE  
+**Document Reference:** DEIP-HLD-V2.1-DEFINITIVE  
 **Compliance Standard:** IEEE 1016-2009 (Systems and Software Engineering — Software Design Descriptions) / ISO/IEC 42010  
 **Architectural Style:** Event-Driven Microservices / Containerized Kubernetes Architecture  
 **Target Throughput:** 150–300 cards/second (Distributed) | 721k Voters in $< 30$ mins  
 **Classification:** Mission-Critical Demographic Data Infrastructure  
-**Status:** Approved Baseline (SDLC Phase 2)  
+**Status:** Approved Definitive Baseline (SDLC Phase 2)  
 
 ---
 
@@ -327,19 +327,33 @@ The platform is decomposed into seven specialized, single-responsibility microse
 * **Demographic Classifier:** Classifies electors into Groups `T`, `M`, `C`, and `S` with strict boundary disqualifiers.
 * **Output:** Commits finalized record to PostgreSQL 16.
 
-#### 5.5.1 Comprehensive Demographic Traps & Disambiguation Architecture
-The consensus engine enforces strict contextual guards on 11 verified empirical failure modes:
-1. **`Sal` $\rightarrow$ `Sai` (4,604 electors) & `Srl` $\rightarrow$ `Sri` (319 electors):** Straight vertical stem misclassification. Replaced ONLY when co-occurring with recognized Indian given names (`Kumar`, `Ram`, `Lakshmi`, `Krishna`, `Babu`, `Durga`, `Kiran`, `Satya`, `Teja`, `Prasad`). Never applied to isolated surnames.
-2. **`...rad` $\rightarrow$ `...rao` (3,363 occurrences):** Terminal loop smudge. Anchored to 45 recognized Telugu masculine stems (`venkata-`, `subba-`, `apparao-`, `satya-`). Hard block on `Murad`, `Sharad`, `Varad`, `Farhad`.
-3. **`Simhaghalam` $\rightarrow$ `Simhachalam` (1,037 occurrences):** Curve closure on `c`. Enforces terminal morpheme lock `-ghalam$` and `-cghalam$`. General substring replacements are forbidden, protecting Sanskrit `Meghala` and `Meghamala`.
-4. **`Simhadai` $\rightarrow$ `Simhadri` (152 occurrences):** Ligature degeneration on `dri`. Constrained strictly to holy hill roots (`Simhadri`, `Neeladri`, `Seshadri`). Strictly protects authentic Sri Vaishnava Brahmin surname `Kandadai`.
-5. **Toponymic `-ur` $\rightarrow$ `-uri`:** Restricts village expansions strictly to 23 whitelisted surnames (`Kommuri`, `Yendamuri`, `Valluri`, etc.). Absolute block on `Bahadur`, `Thakur`, `Nagur`, `Mansoor`, `Noor`, `Mayur`, `Ankur`.
-6. **Caste Suffix Truncations (`-red` $\rightarrow$ `-reddy`, `-shett` $\rightarrow$ `-shetti`):** Restricts expansion to Telugu roots. Absolute block on Anglo names (`Alfred`, `Wilfred`).
-7. **Western `-nald`:** Absolute block preventing `Ronald`, `Reginald`, `Donald` from becoming `*Ronaidu` or `*Reginaidu`.
-8. **Halanta `-id`:** Absolute block preventing `David`, `Shahid`, `Rashid`, `Majid`, `Khalid`, `Hamid` from expanding to `*Davidi` or `*Shahidi`.
-9. **`Pasham` Cultural Safeguard:** Classical Hindu Telugu nominalizer `-am` locked to Group `T`. Never converted to Islamic `Pasha`.
-10. **Ascender Reflection (`d` $\leftrightarrow$ `b`):** Restricts Islamic `-bi` matching to `ISLAMIC_BI_WHITELIST`, preventing `Dibbidi` from becoming `*Dibbibi`.
-11. **Single-Word Patronymics:** Supports single-word authentic names (`Ayesha`, `Subhan`, father listed simply as `Basha` or `Shaik`) without flagging false errors.
+#### 5.5.1 Comprehensive Demographic Traps & Empirical Optical Error Architecture
+The consensus engine enforces strict contextual guards on verified empirical failure modes discovered across 721,735 electors:
+1. **Palatal/Velar Fricative Confusion (`Gh-` $\rightarrow$ `Ch-`):** 19,500+ empirical records (`Ghinta` $\rightarrow$ `Chinta`, `Ghekka` $\rightarrow$ `Chekka`, `Ghellarao` $\rightarrow$ `Chellarao`, `Ghallapalli` $\rightarrow$ `Challapalli`). Guarded by strict `PROTECTED_GH_STEMS` blocklist protecting authentic names like `Ghantasala`, `Ghantam`, `Ghouse`.
+2. **Capital `D` $\rightarrow$ `Q` Bowl Smudge:** 833 empirical records (`Qurga*` $\rightarrow$ `Durga*`, `Qandu` $\rightarrow$ `Dandu`, `Qoddi` $\rightarrow$ `Doddi`, `Qevalla` $\rightarrow$ `Devalla`) with Arabic `Qureshi` protection.
+3. **Terminal `l` Smudge Family (12,000+ empirical records across 7 sub-classes):**
+   - `-pl` $\rightarrow$ `-pu` (4,603 records: `Nallapl` $\rightarrow$ `Nallapu`, `Kanakapl` $\rightarrow$ `Kanakapu`)
+   - `-dl` $\rightarrow$ `-du` (2,450 records: `Rayudl` $\rightarrow$ `Rayudu`, `Govindl` $\rightarrow$ `Govindu`)
+   - `-url` $\rightarrow$ `-uri` (2,190 records: `Vallurl` $\rightarrow$ `Valluri`, `Anasurl` $\rightarrow$ `Anasuri`)
+   - `-settl` $\rightarrow$ `-setti` (1,280 records: `Medisettl` $\rightarrow$ `Medisetti`, `Koppisettl` $\rightarrow$ `Koppisetti`)
+   - `-rajil` $\rightarrow$ `-raju` (1,033 records: `Sattirajil` $\rightarrow$ `Sattiraju`, `Nookarajil` $\rightarrow$ `Nookaraju`)
+   - `-baabl` $\rightarrow$ `-babu` (1,831 records: `Yesubaabl` $\rightarrow$ `Yesubabu`, `Suribaabl` $\rightarrow$ `Suribabu`)
+   - Female terminal `-l` $\rightarrow$ `-i` (3,056 records: `-shml` $\rightarrow$ `-shmi`, `-vatl` $\rightarrow$ `-vati`, `-eswarl` $\rightarrow$ `-eswari`, `-thl` $\rightarrow$ `-thi`, `-devl` $\rightarrow$ `-devi`).
+4. **Authentic `rn` Surnames Protection (10,000+ empirical records):** Valid Indo-Aryan and Dravidian `rn` stems (`Narna` with 4,238 records, `Marni`/`Marne` with 1,826 records, `Karneedi`/`Karnam` with 345 records, `Aparna`/`Annapurna` with 1,639 records) shall NEVER be corrupted by `rn` $\rightarrow$ `m` kerning rules.
+5. **Optical `rn` $\rightarrow$ `m` in Non-Sanskrit Positions (1,329 records):** Contextually applied (`^rn([aeiou])` $\rightarrow$ `m\1`, `kshrn` $\rightarrow$ `kshm`, `drna$` $\rightarrow$ `dma`, `hrn` $\rightarrow$ `hm`, `mrn`/`rnm` $\rightarrow$ `mm`, `-arn$` $\rightarrow$ `-am$`).
+6. **`Sal` $\rightarrow$ `Sai` (4,604 electors) & `Srl` $\rightarrow$ `Sri` (319 electors):** Straight vertical stem misclassification. Replaced ONLY when co-occurring with recognized Indian given names (`Kumar`, `Ram`, `Lakshmi`, `Krishna`, `Babu`, `Durga`, `Kiran`, `Satya`, `Teja`, `Prasad`). Never applied to isolated surnames.
+7. **`...rad` $\rightarrow$ `...rao` (3,363 occurrences):** Terminal loop smudge. Anchored to 45 recognized Telugu masculine stems (`venkata-`, `subba-`, `apparao-`, `satya-`, `nageswara-`, `seshagiri-`). Hard block on `Murad`, `Sharad`, `Varad`, `Farhad`.
+8. **Broken Geminate Respect Plurals (`-ull` $\rightarrow$ `-ulu`, `-all` $\rightarrow$ `-alu`):** 3,641 empirical records (`Thrimurthull` $\rightarrow$ `Thrimurthulu`, `Veeraraghavull` $\rightarrow$ `Veeraraghavulu`, `Trimurthull` $\rightarrow$ `Trimurthulu`, `Shriramull` $\rightarrow$ `Shriramulu`, `Amull` $\rightarrow$ `Amulu`, `Abbull` $\rightarrow$ `Abbulu`, `Govindarajull` $\rightarrow$ `Govindarajulu`).
+9. **ECI Card Label Bleed Stripping:** 2,128 empirical records where pre-printed `Father's Name:` or `Husband's Name:` produced `Narmne` bleeding into the relation name field (`Narmne Prasad Pilla` $\rightarrow$ `Prasad Pilla`).
+10. **`Simhaghalam` $\rightarrow$ `Simhachalam` (1,037 occurrences):** Curve closure on `c`. Enforces terminal morpheme lock `-ghalam$` and `-cghalam$`. General substring replacements are forbidden, protecting Sanskrit `Meghala` and `Meghamala`.
+11. **`Simhadai` $\rightarrow$ `Simhadri` (152 occurrences):** Ligature degeneration on `dri`. Constrained strictly to holy hill roots (`Simhadri`, `Neeladri`, `Seshadri`). Strictly protects authentic Sri Vaishnava Brahmin surname `Kandadai`.
+12. **Toponymic `-ur` $\rightarrow$ `-uri`:** Restricts village expansions strictly to 23 whitelisted surnames (`Kommuri`, `Yendamuri`, `Valluri`, etc.). Absolute block on `Bahadur`, `Thakur`, `Nagur`, `Mansoor`, `Noor`, `Mayur`, `Ankur`.
+13. **Caste Suffix Truncations (`-red` $\rightarrow$ `-reddy`, `-shett` $\rightarrow$ `-shetti`):** Restricts expansion to Telugu roots. Absolute block on Anglo names (`Alfred`, `Wilfred`).
+14. **Western `-nald`:** Absolute block preventing `Ronald`, `Reginald`, `Donald` from becoming `*Ronaidu` or `*Reginaidu`.
+15. **Halanta `-id`:** Absolute block preventing `David`, `Shahid`, `Rashid`, `Majid`, `Khalid`, `Hamid` from expanding to `*Davidi` or `*Shahidi`.
+16. **`Pasham` Cultural Safeguard:** Classical Hindu Telugu nominalizer `-am` locked to Group `T`. Never converted to Islamic `Pasha`.
+17. **Ascender Reflection (`d` $\leftrightarrow$ `b`):** Restricts Islamic `-bi` matching to `ISLAMIC_BI_WHITELIST`, preventing `Dibbidi` from becoming `*Dibbibi`.
+18. **Single-Word Patronymics:** Supports single-word authentic names (`Ayesha`, `Subhan`, father listed simply as `Basha` or `Shaik`) without flagging false errors.
 
 #### 5.5.2 Image-Level Strikethrough & Rubber Stamp Occlusion Recovery
 * **The Defect:** In deletion rolls, deceased or shifted electors have large diagonal `DELETED` or `CANCELLED` rubber stamps stamped across their voter cards, occluding door numbers (e.g. `1-21/J` occluded to `NO J`) and elector names.
@@ -524,3 +538,13 @@ Every service logs in structured JSON to standard output (`stdout`):
 | **FR-30, 31** | Forensic Replay & Red Quarantine | REST API Gateway & DLQ Architecture | `gateway-service` |
 | **FR-32, 33, 34** | Prometheus Telemetry & SSE Push | FastAPI Prometheus Exporter & SSE | `gateway-service` |
 | **SPEC-ING-01..08**| Dual Ingestion (Airgap & Crawler) | Local Scanner & Playwright Whisper Crawler| `crawler-service` |
+
+---
+
+## 12. Document Revision History
+
+| Version | Date | Author / Role | Changes / Descriptions |
+| :--- | :--- | :--- | :--- |
+| **v1.0** | 2026-10-28 | Systems Architecture Team | Initial Microservices Concept & Docker-compose topology. |
+| **v2.0** | 2026-10-29 | Lead Systems Architect | Definitive IEEE 1016 HLD: 7 microservices, C4 Models, 10 ADRs, RabbitMQ AMQP topology, PostgreSQL 16 DDL, OpenShift SCC, and KEDA autoscaling. |
+| **v2.1** | 2026-10-29 | Principal Systems Architect | Forensics synchronization: Aligned Section 5.5.1 with complete 18 empirical error families (19,500+ `Gh-` $\rightarrow$ `Ch-`, 12,000+ terminal `l` smudges, 10,000+ authentic `rn` surname protection, 833 `Q` $\rightarrow$ `D` smudges, 3,363 `-rad` $\rightarrow$ `-rao` records, 3,641 `-ull` $\rightarrow$ `-ulu` plurals, 2,128 `Narmne` bleeds) and detailed Form 7 strikethrough restoration filter. |

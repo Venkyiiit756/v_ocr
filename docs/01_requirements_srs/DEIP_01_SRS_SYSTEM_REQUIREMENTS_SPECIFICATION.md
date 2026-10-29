@@ -1,11 +1,11 @@
 # Software Requirements Specification (SRS) & System Specification
-## Enterprise Distributed Electoral Intelligence Platform (DEIP V2.1)
+## Enterprise Distributed Electoral Intelligence Platform (DEIP V2.2)
 
-**Document Reference:** DEIP-SRS-V2.1-DEFINITIVE  
+**Document Reference:** DEIP-SRS-V2.2-DEFINITIVE  
 **Compliance Standard:** ISO/IEC/IEEE 29148:2018 / IEEE 830-1998  
 **Classification:** Census-Grade Demographic Ingestion & Electoral Intelligence Platform  
 **Target Scope:** 721,735 Electors across Pithapuram (AC 37), Kakinada Rural (AC 38), and Peddapuram (AC 39) $\rightarrow$ Extensible to 40,000,000+ Electors Statewide  
-**Status:** Approved Baseline (SDLC Phase 1)  
+**Status:** Approved Definitive Baseline (SDLC Phase 1)  
 
 ---
 
@@ -223,16 +223,31 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   Door numbers shall have extraneous label artifacts stripped, noise symbols (`¢`, `°`, `§`) normalized to hyphens or slashes, and must contain at least one digit to be considered valid.
 
 ### 4.5 Linguistic Engine & Demographic Safeguards
-* **FR-18 (128 Deterministic Optical Glyph Confusions):**  
-  The token engine shall apply the complete catalog of 128 verified optical glyph replacements:
-  - Dotless 'I' $\rightarrow$ 'L' Confusion: `Sal` $\rightarrow$ `Sai` (4,604 empirical electors) and `Srl` $\rightarrow$ `Sri` (319 empirical electors) with contextual Indian given-name anchor guard.
-  - Guttural/Palatal Curve Closure: `Simhaghalam` $\rightarrow$ `Simhachalam` (1,037 empirical electors) with terminal morpheme lock protecting `Meghala`.
-  - Fused Ligatures: `Simhadai` $\rightarrow$ `Simhadri` (152 empirical electors) with strict protection for Sri Vaishnava `Kandadai`.
-  - Ascender loops: `cl` $\rightarrow$ `d` (`prasacl` $\rightarrow$ `prasad`, `kacliyala` $\rightarrow$ `kadiyala`).
-  - Mirror ascenders: `d` $\leftrightarrow$ `b` (`tatapubi` $\rightarrow$ `Tatapudi`, `surampubi` $\rightarrow$ `Surampudi`, `mummibi` $\rightarrow$ `Mummadi`).
-  - Kerning fusions: `rn` $\rightarrow$ `m` in standard Telugu roots (`rarnana` $\rightarrow$ `ramana`, `arnma` $\rightarrow$ `amma`), protected from mutating `PROTECTED_RN`.
-  - Split diagonal stems: `kik`/`kkl`/`kiaa` $\rightarrow$ `kk` (`Nakikaa` $\rightarrow$ `Nakka`, `klukika` $\rightarrow$ `Kukka`).
-  - Masculine suffixes: `-rad`/`-raq`/`-rag` $\rightarrow$ `-rao` (anchored to 45 known Telugu masculine stems like `Venkata-`, `Appala-`, `Subba-`, `Satya-`); `-rajl`/`-raiu` $\rightarrow$ `-raju`; `-babl`/`-bablu` $\rightarrow$ `-babu`.
+* **FR-18 (128 Deterministic Optical Glyph Confusions & Empirical Error Families):**  
+  The token engine shall apply the complete catalog of 128 verified optical glyph replacements and empirical error families across 721,735 electors:
+  - **Palatal/Velar Fricative Confusion (`Gh-` $\rightarrow$ `Ch-`):** 19,500+ empirical records (`Ghinta` $\rightarrow$ `Chinta`, `Ghekka` $\rightarrow$ `Chekka`, `Ghellarao` $\rightarrow$ `Chellarao`, `Ghallapalli` $\rightarrow$ `Challapalli`) with strict `PROTECTED_GH_STEMS` blocklist protecting `Ghantasala`, `Ghantam`, `Ghouse`.
+  - **Capital `D` $\rightarrow$ `Q` Bowl Smudge:** 833 empirical records (`Qurga*` $\rightarrow$ `Durga*`, `Qandu` $\rightarrow$ `Dandu`, `Qoddi` $\rightarrow$ `Doddi`, `Qevalla` $\rightarrow$ `Devalla`) with Arabic `Qureshi` protection.
+  - **Terminal `l` Smudge Family (12,000+ empirical records across 7 sub-classes):**
+    * `-pl` $\rightarrow$ `-pu` (4,603 records: `Nallapl` $\rightarrow$ `Nallapu`, `Kanakapl` $\rightarrow$ `Kanakapu`)
+    * `-dl` $\rightarrow$ `-du` (2,450 records: `Rayudl` $\rightarrow$ `Rayudu`, `Govindl` $\rightarrow$ `Govindu`)
+    * `-url` $\rightarrow$ `-uri` (2,190 records: `Vallurl` $\rightarrow$ `Valluri`, `Anasurl` $\rightarrow$ `Anasuri`)
+    * `-settl` $\rightarrow$ `-setti` (1,280 records: `Medisettl` $\rightarrow$ `Medisetti`, `Koppisettl` $\rightarrow$ `Koppisetti`)
+    * `-rajil` $\rightarrow$ `-raju` (1,033 records: `Sattirajil` $\rightarrow$ `Sattiraju`, `Nookarajil` $\rightarrow$ `Nookaraju`)
+    * `-baabl` $\rightarrow$ `-babu` (1,831 records: `Yesubaabl` $\rightarrow$ `Yesubabu`, `Suribaabl` $\rightarrow$ `Suribabu`)
+    * Female terminal `-l` $\rightarrow$ `-i` (3,056 records: `-shml` $\rightarrow$ `-shmi`, `-vatl` $\rightarrow$ `-vati`, `-eswarl` $\rightarrow$ `-eswari`, `-thl` $\rightarrow$ `-thi`, `-devl` $\rightarrow$ `-devi`).
+  - **Dotless 'I' $\rightarrow$ 'L' Confusion:** `Sal` $\rightarrow$ `Sai` (4,604 empirical electors) and `Srl` $\rightarrow$ `Sri` (319 empirical electors) with contextual Indian given-name anchor guard.
+  - **Guttural/Palatal Curve Closure:** `Simhaghalam` $\rightarrow$ `Simhachalam` (1,037 empirical electors) with terminal morpheme lock protecting `Meghala`.
+  - **Fused Ligatures:** `Simhadai` $\rightarrow$ `Simhadri` (152 empirical electors) with strict protection for Sri Vaishnava `Kandadai`.
+  - **Ascender loops:** `cl` $\rightarrow$ `d` (`prasacl` $\rightarrow$ `prasad`, `kacliyala` $\rightarrow$ `kadiyala`).
+  - **Mirror ascenders:** `d` $\leftrightarrow$ `b` (`tatapubi` $\rightarrow$ `Tatapudi`, `surampubi` $\rightarrow$ `Surampudi`, `mummibi` $\rightarrow$ `Mummadi`).
+  - **Authentic `rn` Surnames Protection (10,000+ empirical records):** Surnames with valid Indo-Aryan/Dravidian `rn` stems (`Narna` with 4,238 records, `Marni`/`Marne` with 1,826 records, `Karneedi`/`Karnam` with 345 records, `Aparna`/`Annapurna` with 1,639 records) shall NEVER be corrupted by `rn` $\rightarrow$ `m` kerning rules.
+  - **Optical `rn` $\rightarrow$ `m` in Non-Sanskrit Positions (1,329 records):** `^rn([aeiou])` $\rightarrow$ `m\1`, `kshrn` $\rightarrow$ `kshm`, `drna$` $\rightarrow$ `dma`, `hrn` $\rightarrow$ `hm`, `mrn`/`rnm` $\rightarrow$ `mm`, `-arn$` $\rightarrow$ `-am$`.
+  - **Optical `Vuay-` $\rightarrow$ `Vijay-`:** (280 records: `Vuayalakshmi` $\rightarrow$ `Vijayalakshmi`, `Vuayakumar` $\rightarrow$ `Vijayakumar`).
+  - **Vowel glitch `-uai` $\rightarrow$ `-uri`:** (`Polamuai` $\rightarrow$ `Polamuri`, `Kovvuai` $\rightarrow$ `Kovvuri`).
+  - **Split diagonal stems:** `kik`/`kkl`/`kiaa` $\rightarrow$ `kk` (`Nakikaa` $\rightarrow$ `Nakka`, `klukika` $\rightarrow$ `Kukka`).
+  - **Masculine Honorific Plosive Glitch (`-rad`/`-raad` $\rightarrow$ `-rao`):** 3,363 empirical records anchored to 45 verified Telugu masculine stems (`Venkata-`, `Appala-`, `Subba-`, `Satya-`, `Nageswara-`, `Seshagiri-`, `Atcha-`, `Ananda-`), strictly blocked on `Murad`, `Sharad`, `Varad`, `Farhad`.
+  - **Broken Geminate Respect Plurals (`-ull` $\rightarrow$ `-ulu`, `-all` $\rightarrow$ `-alu`):** 3,641 empirical records (`Thrimurthull` $\rightarrow$ `Thrimurthulu`, `Veeraraghavull` $\rightarrow$ `Veeraraghavulu`, `Trimurthull` $\rightarrow$ `Trimurthulu`, `Shriramull` $\rightarrow$ `Shriramulu`, `Amull` $\rightarrow$ `Amulu`, `Abbull` $\rightarrow$ `Abbulu`, `Govindarajull` $\rightarrow$ `Govindarajulu`).
+  - **ECI Card Label Bleed Stripping:** 2,128 empirical records where pre-printed `Father's Name:` or `Husband's Name:` produced `Narmne` bleeding into the relation name field (`Narmne Prasad Pilla` $\rightarrow$ `Prasad Pilla`).
 * **FR-19 (23 Space-Split Surnames):**  
   The token engine shall detect and rejoin compound surnames split across whitespace by dot-matrix print gaps:
   `('ga', 'ttem')` $\rightarrow$ `Gattem`, `('gol', 'lapalli')` $\rightarrow$ `Gollapalli`, `('ko', 'ppisetti')` $\rightarrow$ `Koppisetti`, `('me', 'disetti')` $\rightarrow$ `Medisetti`, `('va', 'samsetti')` $\rightarrow$ `Vasamsetti`, `('ta', 'tapudi')` $\rightarrow$ `Tatapudi`, `('su', 'rampudi')` $\rightarrow$ `Surampudi`, `('kommi', 'needi')` $\rightarrow$ `Kommineedi`, `('pabbi', 'needi')` $\rightarrow$ `Pabbineedi`, `('chinta', 'palli')` $\rightarrow$ `Chintapalli`, `('konda', 'palli')` $\rightarrow$ `Kondapalli`, `('bavi', 'setti')` $\rightarrow$ `Bavisetti`, etc.
@@ -247,10 +262,13 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   Automated token mutation shall be **strictly prohibited** if the target token belongs to any of the following protected classes:
   1. **Absolute Vocalic Immunity:** Classical Telugu micro-surnames (`Boppana`, `Chavala`, `Peeta`, etc.) ending in valid vowels shall never have consonants or vowels added.
   2. **`Pasham` Cultural Safeguard:** Classical Hindu Telugu nominalizer `-am` shall be protected; `Pasham` must never be modified or classified as Islamic `Pasha`.
-  3. **Sanskrit Halanta Blocklist (`PROTECTED_HALANTA_BLOCKLIST`):** Masculine halanta names ending in consonants (`Kiran`, `Charan`, `Pavan`, `Kalyan`, `Kumar`, `Naveen`, `Praveen`, `Prasad`, `Bharath`, `Siddharth`) shall never be suffixed with Ajanta vowels.
-  4. **Anglo-Christian & Western Blocklist:** Biblical and Anglo given names (`David`, `John`, `Paul`, `Peter`, `Samuel`, `Daniel`, `Joseph`, `Stephen`, `Philip`, `Thomas`, `James`, `Jacob`, `Mary`, `Martha`, `Alfred`, `Wilfred`, `Ronald`, `Reginald`, `Donald`) shall never be modified or converted to Telugu titles (e.g. `Alfred` must never become `*Alfreddy`, `Ronald` must never become `*Ronaidu`).
-  5. **Islamic Nomenclature Safeguards (`ISLAMIC_TOKENS`):** Arabic/Urdu names (`Shaik`, `Syed`, `Pathan`, `Khan`, `Mohammad`, `Hussain`, `Hameed`, `Rasheed`, `Bibi`, `Khatoon`, `Murad`, `Sharad`, `Varad`, `Farhad`) shall never have Telugu suffixes appended (e.g. `Murad` must never become `*Murao`).
-  6. **Sacred Lineage & Toponymic Guards:** `Kandadai` (Sri Vaishnava Brahmin surname) must never become `*Kandadri`; `Bahadur`, `Thakur`, `Nagur`, `Mansoor`, `Noor`, `Mayur` must never become `*Bahaduri`; `Meghala` must never become `*Mechala`.
+  3. **Protected `Gh-` Stems (`PROTECTED_GH_STEMS`):** Authentic Telugu and Islamic `Gh-` names (`Ghantasala`, `Ghantam`, `Ghouse`) shall never be mutated to `Ch-`.
+  4. **Protected Arabic `Q-` Stems (`PROTECTED_Q_STEMS`):** Authentic names (`Qureshi`, `Quran`, `Qasim`) shall never be mutated to `D-`.
+  5. **Protected Sanskrit & Dravidian `rn` Roots (`PROTECTED_RN`):** `Narna`, `Marni`, `Marne`, `Karneedi`, `Karnam`, `Aparna`, `Annapurna`, `Swarna`, `Aruna`, `Taruni`, `Dharani`, `Varnasi` shall never be modified by `rn` $\rightarrow$ `m` rules.
+  6. **Sanskrit Halanta Blocklist (`PROTECTED_HALANTA_BLOCKLIST`):** Masculine halanta names ending in consonants (`Kiran`, `Charan`, `Pavan`, `Kalyan`, `Kumar`, `Naveen`, `Praveen`, `Prasad`, `Bharath`, `Siddharth`) shall never be suffixed with Ajanta vowels.
+  7. **Anglo-Christian & Western Blocklist:** Biblical and Anglo given names (`David`, `John`, `Paul`, `Peter`, `Samuel`, `Daniel`, `Joseph`, `Stephen`, `Philip`, `Thomas`, `James`, `Jacob`, `Mary`, `Martha`, `Alfred`, `Wilfred`, `Ronald`, `Reginald`, `Donald`) shall never be modified or converted to Telugu titles (e.g. `Alfred` must never become `*Alfreddy`, `Ronald` must never become `*Ronaidu`).
+  8. **Islamic Nomenclature Safeguards (`ISLAMIC_TOKENS`):** Arabic/Urdu names (`Shaik`, `Syed`, `Pathan`, `Khan`, `Mohammad`, `Hussain`, `Hameed`, `Rasheed`, `Bibi`, `Khatoon`, `Murad`, `Sharad`, `Varad`, `Farhad`) shall never have Telugu suffixes appended (e.g. `Murad` must never become `*Murao`).
+  9. **Sacred Lineage & Toponymic Guards:** `Kandadai` (Sri Vaishnava Brahmin surname) must never become `*Kandadri`; `Bahadur`, `Thakur`, `Nagur`, `Mansoor`, `Noor`, `Mayur` must never become `*Bahaduri`; `Meghala` must never become `*Mechala`.
 
 ### 4.6 Spatial Household Graph & Bayesian Consensus Engine
 * **FR-23 (Bipartite Household Graph Construction):**  
@@ -545,3 +563,14 @@ The system shall be formally verified against 5 rigorous quality gates prior to 
 | **FR-39, 40** | Demographic Classification | `ClassifierService` | Gate 4 |
 | **FR-41, 42** | Bilingual & Deletion Rolls| `LayoutWorker` & `OCRWorker` | Gate 3 & 5 |
 | **SPEC-ING-01..08**| Dual-Source Ingestion | Local Scanner & Playwright Crawler | Gate 5 |
+
+---
+
+## 9. Document Revision History
+
+| Version | Date | Author / Role | Changes / Descriptions |
+| :--- | :--- | :--- | :--- |
+| **v1.0** | 2026-10-28 | Systems Architecture Team | Initial Draft: Legacy 14 FRs and preliminary OCR assumptions. |
+| **v2.0** | 2026-10-29 | Lead Systems Architect | Comprehensive overhaul: 40 Functional Requirements, 14 NFRs, 5 Quality Gates. |
+| **v2.1** | 2026-10-29 | Principal Systems Architect | Forensics alignment: Added FR-41, FR-42 (bilingual cross-check, DELETED rubber stamp recovery), non-greedy age 18/19 regex fix, and 11-trap empirical matrix. |
+| **v2.2** | 2026-10-29 | Principal Electoral Architect | Full Empirical Matrix: Enriched FR-18 and FR-22 with 19,500+ `Gh-` $\rightarrow$ `Ch-` occurrences, 12,000+ terminal `l` smudge family, 10,000+ authentic `rn` surname protection (`Narna` 4,238 records, `Marni` 1,826 records), 833 `Q` $\rightarrow$ `D` records, 3,363 `-rad` $\rightarrow$ `-rao` records, 3,641 `-ull` $\rightarrow$ `-ulu` respect plurals, and 2,128 `Narmne` label bleed stripping. |
