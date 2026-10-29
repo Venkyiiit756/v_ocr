@@ -128,6 +128,39 @@ class DualZoneOCREngine:
             if epic_text:
                 break
         
+        # Fallback tier: Native resolution without whitelist (handles smudged dot-matrix fonts where whitelist drops characters)
+        if not epic_text:
+            native_crops = [
+                (card_gray[0:int(round(0.24 * h)), int(round(0.38 * w)):w], [6, 7, 11]),
+                (card_gray[int(round(0.02 * h)):int(round(0.22 * h)), int(round(0.44 * w)):int(round(0.98 * w))], [6, 7]),
+            ]
+            for crop_img, psms in native_crops:
+                for psm in psms:
+                    raw_dump = self._run_tesseract(crop_img, "", psm=psm)
+                    if not raw_dump:
+                        continue
+                    norm = parser_h.normalize_epic_candidate(raw_dump)
+                    if norm:
+                        epic_text = norm
+                        break
+                    for line in raw_dump.splitlines():
+                        line_str = line.strip().upper()
+                        norm = parser_h.normalize_epic_candidate(line_str)
+                        if norm:
+                            epic_text = norm
+                            break
+                        for tok in line_str.split():
+                            norm = parser_h.normalize_epic_candidate(tok)
+                            if norm:
+                                epic_text = norm
+                                break
+                        if epic_text:
+                            break
+                    if epic_text:
+                        break
+                if epic_text:
+                    break
+        
         # 3. Zone B (Demographics): Native 300 DPI (no interpolation noise), PSM 6
         body_config = "-c tessedit_char_blacklist=§©®¢°~\\{}[]|`^$#@*"
         if self.user_words_path and os.path.exists(self.user_words_path):

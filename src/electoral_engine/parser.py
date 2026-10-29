@@ -58,13 +58,13 @@ def extract_valid_age(ocr_text: str) -> Optional[int]:
     Extracts elector age without swallowing the leading '1' in 18 and 19-year-olds.
     Searches bottom-up to avoid collisions with names like Nageswararao.
     Recovers dot-matrix slashed glyphs ('/' and '?' -> 7), optical separator slashes ('6/7' -> 67),
-    and character lookalikes ('5o' -> 50, '4%' -> 40, '3)' -> 30, '6d' -> 60).
+    and character lookalikes ('5o' -> 50, '4%' -> 40, '3)' -> 30, '6d' -> 60, '-d4' -> 64).
     """
     if not ocr_text:
         return None
         
     patterns = [
-        r'(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b[^\d\n\r]{0,6}([0-9A-Za-z\/\?\%\.\+\-\)\(]{1,6})',
+        r'(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b(?:[^\d\w\/\?]+|[il1t\?](?!\d))*([0-9A-Za-z\/\?\%\.\+\-\)\(]{1,6})',
         r'\b(?:Vayassu|వయస్సు)\s*[:=\-]?\s*([0-9\/\?]{2,3})'
     ]
     for pat in patterns:
@@ -75,10 +75,12 @@ def extract_valid_age(ocr_text: str) -> Optional[int]:
             # Slashed single separator: 6/7 -> 67, 2/7 -> 27, 5/7 -> 57
             if re.match(r'^\d/\d$', raw):
                 raw = raw.replace('/', '')
-            # Slashed 7: e.g. /7 -> 77, 4/ -> 47
+            # Slashed 7: e.g. /7 -> 77, 4/ -> 47, /9 -> 79
             raw = raw.replace('?', '7').replace('/', '7')
             # 5o -> 50, 6d -> 60, 3) -> 30
             raw = re.sub(r'([0-9])[oOdD\)]', r'\g<1>0', raw)
+            # -d4 -> 64
+            raw = re.sub(r'^[dD]([0-9])', r'6\g<1>', raw)
             # 4% -> 40
             raw = raw.replace('%', '0')
             
@@ -270,10 +272,12 @@ def normalize_door_number(raw_door: str) -> str:
     s = str(raw_door).strip().upper()
     s = re.sub(r'\b(?:NO\s*J|NOJ|DEL|DELETED|CANCELLED|PHOTO|AVAILABLE)\b', '', s, flags=re.IGNORECASE)
     # Strip leading label words before punctuation conversion
-    s = re.sub(r'^(?:HOUSE\s*(?:NO|NUMBER|\#)?|DOOR\s*(?:NO|NUMBER|\#)?|[DH]\.?\s*NO\.?|DNO|HNO|NUMBER|NUMBAR|NUM|NO|ఇంటి\s*నెం\.?|డోర్\s*నెం\.?|\s)+', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'^(?:(?:[Ee]\s*)?(?:HOUSE|DOOR|NUMBER|NUMBAR|NUM|NO)\b|[DH]\.?\s*NO\.?|DNO|HNO|FLAT\s*NO\.?|PLOT\s*NO\.?|ఇంటి\s*నెం\.?|డోర్\s*నెం\.?|\s|\-)+', '', s, flags=re.IGNORECASE)
+    # Strip trailing label words without values (e.g. ',FLAT NO:')
+    s = re.sub(r'[\-,\s:]+(?:(?:FLAT|PLOT|HOUSE|DOOR|NUMBER|NUM|NO)[\-,\s:]*)+$', '', s, flags=re.IGNORECASE)
     # Convert punctuation and noise characters to hyphens
     s = re.sub(r'[\\_.,;:|+*~]+', '-', s)
-    s = re.sub(r'^(?:[A-Za-z0-9\-]*HOUSE|[A-Za-z0-9\-]*DOOR|[A-Za-z0-9\-]*NUMBER|[A-Za-z0-9\-]*NUMBAR|[A-Za-z0-9\-]*NUM|[A-Za-z0-9\-]*NO|HNO|DNO|FLATNO|PLOTNO|\-)+', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'^(?:[Ee]?\s*NUMBER|[Ee]?\s*NUMBAR|[Ee]?\s*NUM|HNO|DNO|\-)+', '', s, flags=re.IGNORECASE)
     s = re.sub(r'--+', '-', s)
     s = re.sub(r'//+', '/', s)
     s = re.sub(r'^(?:[DH]-NO-|NO-|-)+', '', s, flags=re.IGNORECASE)
@@ -336,6 +340,7 @@ class VoterCardParser:
         cand = s.replace(' ', '').replace('-', '')
 
         # Dot-matrix border detachment & standard prefix restoration
+        cand = re.sub(r'^(BVFI|BVFL|BVEI)', 'BVF1', cand)
         cand = re.sub(r'^(UION|VION|WION|LION|MION|HION|TION|LLON|IION|YON|CUON)', 'UON', cand)
         cand = re.sub(r'^(W0N|U0N|V0N|UQN|L0N|WON0|UON0)', 'UON', cand)
         cand = re.sub(r'^(BYVF|BVVF|BVE|BYF|BVP|BVFS|BVF\?)', 'BVF', cand)
@@ -507,9 +512,9 @@ class VoterCardParser:
         
         state = 'INIT'
         for l in lines:
-            m_name = re.match(r'^(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Nane|Mane|Naine|Maine|Peru|Voter\s*Name|పేరు|ఓటరు\s*పేరు)\s*[:*+=;>\?\-\s]*(.*)', l, re.I)
-            m_rel = re.match(r'^(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|తండ్రి|భర్త|తల్లి|సంరక్షకుని|ఇతర)[s\'’]*(?:\s*(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|Mane|పేరు))?\s*[:*+=;>\?\-\!\|/\\\s]*(.*)', l, re.I)
-            m_house = re.match(r'^(?:[HhlI1|Ff][\-]?[o0eau]us|Flous[ea]?|Fious[ea]?|F[\-]?[il1o0eau]?l?ous[ea]?|[Ff][o0eau]+w?s[ea]?|[Hh\-]?[o0eau]us[ea]?|Howse|Hous|Inti|D\.?No|H\.?No|ఇంటి\s*(?:సంఖ్య|నెం|నంబరు)?|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]*(.*)', l, re.I)
+            m_name = re.match(r'^(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Narmne|Narmin|Namet|Nane|Mane|Naine|Maine|Peru|Voter\s*Name|పేరు|ఓటరు\s*పేరు)\s*[:*+=;>\?\-\s]*(.*)', l, re.I)
+            m_rel = re.match(r'^(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Ausband|Ashand|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|తండ్రి|భర్త|తల్లి|సంరక్షకుని|ఇతర)[s\'’]*(?:\s*(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|Mane|పేరు))?\s*[:*+=;>\?\-\!\|/\\\s]*(.*)', l, re.I)
+            m_house = re.match(r'^(?:[\-\._\s]*[Ff]?|[eE]\s*)?(?:[HhlI1|Ff]?[\-]?[o0eau]us[ea]?|Flous[ea]?|Fious[ea]?|Howse|Inti|D\.?No|H\.?No|House|Hous|Hse|Door|Number|Numbar|Num|No|ఇంటి\s*(?:సంఖ్య|నెం|నంబరు)?|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]*(.*)', l, re.I)
             m_age = re.search(r'\b(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b', l, re.I)
             
             if m_name and state == 'INIT':
@@ -521,7 +526,7 @@ class VoterCardParser:
                 state = 'REL'
                 rt = m_rel.group(1).lower()
                 if rt.startswith('f') or 'తండ్రి' in rt: rel_type = 'Father'
-                elif rt.startswith('h') or 'భర్త' in rt: rel_type = 'Husband'
+                elif rt.startswith('h') or rt.startswith('a') or 'భర్త' in rt: rel_type = 'Husband'
                 elif rt.startswith('m') or 'తల్లి' in rt: rel_type = 'Mother'
                 elif rt.startswith('g') or 'సంరక్ష' in rt: rel_type = 'Guardian'
                 else: rel_type = 'Other'
