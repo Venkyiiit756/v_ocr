@@ -47,9 +47,9 @@ SPLIT_SURNAME_MAP = {
 
 RE_AGE_BOTTOM_UP = re.compile(
     r'(?:^|(?<=[\s\n\r0-9]))'
-    r'(?:[0-9]?Ag[e\?@aoc]|Age|Vayassu)\b'
-    r'[^\d\n\r\/\?]{0,4}'
-    r'([0-9\/\?]{2,3})',
+    r'(?:[0-9]?A[gdq][e\?@aoc]|Age|Ade|Aqe|Vayassu)\b'
+    r'[^\d\n\r]{0,6}'
+    r'([0-9A-Za-z\/\?\%\.\+\-\)\(]{1,6})',
     re.IGNORECASE
 )
 
@@ -57,19 +57,44 @@ def extract_valid_age(ocr_text: str) -> Optional[int]:
     """
     Extracts elector age without swallowing the leading '1' in 18 and 19-year-olds.
     Searches bottom-up to avoid collisions with names like Nageswararao.
-    Recovers dot-matrix slashed glyphs ('/' and '?' -> 7).
+    Recovers dot-matrix slashed glyphs ('/' and '?' -> 7), optical separator slashes ('6/7' -> 67),
+    and character lookalikes ('5o' -> 50, '4%' -> 40, '3)' -> 30, '6d' -> 60).
     """
     if not ocr_text:
         return None
-    for match in reversed(list(RE_AGE_BOTTOM_UP.finditer(ocr_text))):
-        raw_digits = match.group(1).replace('/', '7').replace('?', '7')
-        if raw_digits.isdigit():
-            val = int(raw_digits)
-            if val > 110 and len(raw_digits) == 3:
-                if raw_digits[0] in ('1', '7') and 18 <= int(raw_digits[1:]) <= 110:
-                    val = int(raw_digits[1:])
-            if 18 <= val <= 110:
-                return val
+        
+    patterns = [
+        r'(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b[^\d\n\r]{0,6}([0-9A-Za-z\/\?\%\.\+\-\)\(]{1,6})',
+        r'\b(?:Vayassu|వయస్సు)\s*[:=\-]?\s*([0-9\/\?]{2,3})'
+    ]
+    for pat in patterns:
+        for m in reversed(list(re.finditer(pat, ocr_text, re.I))):
+            raw = m.group(1).strip(' .-+:=>')
+            if not raw:
+                continue
+            # Slashed single separator: 6/7 -> 67, 2/7 -> 27, 5/7 -> 57
+            if re.match(r'^\d/\d$', raw):
+                raw = raw.replace('/', '')
+            # Slashed 7: e.g. /7 -> 77, 4/ -> 47
+            raw = raw.replace('?', '7').replace('/', '7')
+            # 5o -> 50, 6d -> 60, 3) -> 30
+            raw = re.sub(r'([0-9])[oOdD\)]', r'\g<1>0', raw)
+            # 4% -> 40
+            raw = raw.replace('%', '0')
+            
+            digits = re.sub(r'\D', '', raw)
+            if digits.isdigit():
+                val = int(digits)
+                if 18 <= val <= 110:
+                    return val
+                if len(digits) == 3:
+                    # Check last 2 digits first (e.g. noise prefix '417' -> 17 is < 18, check first 2 -> 41; or '434' -> 34)
+                    v2 = int(digits[1:])
+                    if 18 <= v2 <= 110:
+                        return v2
+                    v1 = int(digits[:2])
+                    if 18 <= v1 <= 110:
+                        return v1
     return None
 
 RE_DOOR_RAW = re.compile(
@@ -244,17 +269,24 @@ def normalize_door_number(raw_door: str) -> str:
         return "-"
     s = str(raw_door).strip().upper()
     s = re.sub(r'\b(?:NO\s*J|NOJ|DEL|DELETED|CANCELLED|PHOTO|AVAILABLE)\b', '', s, flags=re.IGNORECASE)
-    s = re.sub(r'^(?:HOUSE\s*(?:NO|NUMBER|\#)?|DOOR\s*(?:NO|NUMBER|\#)?|[DH]\.?\s*NO\.?|DNO|HNO|ఇంటి\s*నెం\.?|డోర్\s*నెం\.?)\s*[:=\-\.]*\s*', '', s, flags=re.IGNORECASE)
-    m = RE_DOOR_RAW.search(s)
-    if m:
-        s = m.group(1).strip()
-    s = re.sub(r'[\\_.,;:|]+', '-', s)
+    # Strip leading label words before punctuation conversion
+    s = re.sub(r'^(?:HOUSE\s*(?:NO|NUMBER|\#)?|DOOR\s*(?:NO|NUMBER|\#)?|[DH]\.?\s*NO\.?|DNO|HNO|NUMBER|NUMBAR|NUM|NO|ఇంటి\s*నెం\.?|డోర్\s*నెం\.?|\s)+', '', s, flags=re.IGNORECASE)
+    # Convert punctuation and noise characters to hyphens
+    s = re.sub(r'[\\_.,;:|+*~]+', '-', s)
+    s = re.sub(r'^(?:[A-Za-z0-9\-]*HOUSE|[A-Za-z0-9\-]*DOOR|[A-Za-z0-9\-]*NUMBER|[A-Za-z0-9\-]*NUMBAR|[A-Za-z0-9\-]*NUM|[A-Za-z0-9\-]*NO|HNO|DNO|FLATNO|PLOTNO|\-)+', '', s, flags=re.IGNORECASE)
     s = re.sub(r'--+', '-', s)
     s = re.sub(r'//+', '/', s)
-    s = re.sub(r'^(?:[DH]-NO-|NO-)', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'^(?:[DH]-NO-|NO-|-)+', '', s, flags=re.IGNORECASE)
+    
+    # Strip optical colon bleeds on known AC38 ward prefixes
+    s = re.sub(r'^[1247](65-[0-9])', r'\1', s)
+    s = re.sub(r'^[1247](66-[0-9])', r'\1', s)
+    s = re.sub(r'^[1247](45-[0-9])', r'\1', s)
+    s = re.sub(r'^74(65-[0-9])', r'\1', s)
+    
     s = re.sub(r'[^0-9A-Z\-\/]', '', s)
     s = s.strip('-/')
-    if not any(ch.isdigit() for ch in s):
+    if not s or s in ('-', '--'):
         return "-"
     return s
 
@@ -321,6 +353,7 @@ class VoterCardParser:
         cand = re.sub(r'^(IMZN|IMZT|IMZI)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{6}$)', 'IMZ1', cand)
         cand = re.sub(r'^(IM2Z|IMUZ|IMIZ|IMLZ|INZ|1MZ|LMZ|TMZ|1M2Z|LM2Z|JMZ|JM2Z|MZ|IM|NMZ)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{7,8}$)', 'IMZ', cand)
         cand = re.sub(r'^(GH2|GZ|CHZ)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{7}$)', 'GHZ', cand)
+        cand = re.sub(r'^(KG2Z|KGZ|K0Z|KO2|KQZ|K02|KZZ)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{6,8}$)', 'KOZ', cand)
         cand = re.sub(r'^(U0N|VON|UQN)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{7}$)', 'UON', cand)
 
         cand = re.sub(r'^(WUZM|WUZN|WLZM|WIZM)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{5}$)', 'WUZ14', cand)
@@ -466,65 +499,64 @@ class VoterCardParser:
                     extracted_epic = norm
                     break
 
-        # 2. Voter Name
-        voter_name_clean = ''
-        voter_name_raw = ''
-        for idx_l, line in enumerate(lines):
-            if re.search(r'\b(Father|Fathar|Fether|Husband|Hushend|Mother|Mothar|Other|Guardian|తండ్రి|భర్త|తల్లి)[s\'’]*\b', line, re.I):
-                continue
-            nm = re.search(r'(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Nane|Peru|Voter\s*Name|పేరు|ఓటరు\s*పేరు)\s*[:*+=;>\?\-\s]*(.*)', line, re.I)
-            if nm:
-                voter_name_raw = nm.group(1)
-                cand_name = self.clean_name(voter_name_raw)
-                if not cand_name and idx_l + 1 < len(lines):
-                    nxt = lines[idx_l + 1]
-                    if not re.search(r'\b(Father|Fathar|Fether|Husband|Hushend|Mother|Mothar|Other|Guardian|House|Howse|Age|Gender|తండ్రి|భర్త|తల్లి|ఇంటి|వయస్సు|లింగము)\b', nxt, re.I):
-                        voter_name_raw = nxt
-                        cand_name = self.clean_name(nxt)
-                if cand_name:
-                    voter_name_clean = cand_name
-                    break
-
-        # 3. Relative Name & Relationship Type
+        # 2. Sequential Multi-Line Demographic Extraction (Name, Relative, House No)
+        voter_lines = []
+        rel_lines = []
         rel_type = '-'
-        rel_name_clean = ''
-        rel_name_raw = ''
-        rel_m = re.search(
-            r'(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|తండ్రి|భర్త|తల్లి|సంరక్షకుని|ఇతర)[s\'’]*(?:\s*(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|పేరు))?\s*[:*+=;>\?\-\!\|/\\\s]+([^\n\r]+)',
-            full_text,
-            re.I
-        )
-        if rel_m:
-            raw_rt = rel_m.group(1).lower()
-            if raw_rt.startswith('f') or 'తండ్రి' in raw_rt:
-                rel_type = 'Father'
-            elif raw_rt.startswith('h') or 'భర్త' in raw_rt:
-                rel_type = 'Husband'
-            elif raw_rt.startswith('m') or 'తల్లి' in raw_rt:
-                rel_type = 'Mother'
-            elif raw_rt.startswith('g') or 'సంరక్ష' in raw_rt:
-                rel_type = 'Guardian'
-            else:
-                rel_type = 'Other'
-            rel_name_raw = strip_card_label_bleeds(rel_m.group(2))
-            rel_name_clean = self.clean_name(rel_name_raw)
+        house_lines = []
+        
+        state = 'INIT'
+        for l in lines:
+            m_name = re.match(r'^(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Nane|Mane|Naine|Maine|Peru|Voter\s*Name|పేరు|ఓటరు\s*పేరు)\s*[:*+=;>\?\-\s]*(.*)', l, re.I)
+            m_rel = re.match(r'^(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|తండ్రి|భర్త|తల్లి|సంరక్షకుని|ఇతర)[s\'’]*(?:\s*(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|Mane|పేరు))?\s*[:*+=;>\?\-\!\|/\\\s]*(.*)', l, re.I)
+            m_house = re.match(r'^(?:[HhlI1|Ff][\-]?[o0eau]us|Flous[ea]?|Fious[ea]?|F[\-]?[il1o0eau]?l?ous[ea]?|[Ff][o0eau]+w?s[ea]?|[Hh\-]?[o0eau]us[ea]?|Howse|Hous|Inti|D\.?No|H\.?No|ఇంటి\s*(?:సంఖ్య|నెం|నంబరు)?|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]*(.*)', l, re.I)
+            m_age = re.search(r'\b(?:Age|Ag[e\?@aoc]|Ade|Aqe|Vayassu)\b', l, re.I)
+            
+            if m_name and state == 'INIT':
+                state = 'NAME'
+                rem = m_name.group(1).strip()
+                if rem: voter_lines.append(rem)
+                continue
+            elif m_rel and state in ('INIT', 'NAME'):
+                state = 'REL'
+                rt = m_rel.group(1).lower()
+                if rt.startswith('f') or 'తండ్రి' in rt: rel_type = 'Father'
+                elif rt.startswith('h') or 'భర్త' in rt: rel_type = 'Husband'
+                elif rt.startswith('m') or 'తల్లి' in rt: rel_type = 'Mother'
+                elif rt.startswith('g') or 'సంరక్ష' in rt: rel_type = 'Guardian'
+                else: rel_type = 'Other'
+                rem = m_rel.group(2).strip()
+                if rem: rel_lines.append(rem)
+                continue
+            elif m_house and state in ('INIT', 'NAME', 'REL'):
+                state = 'HOUSE'
+                rem = m_house.group(1).strip()
+                if rem: house_lines.append(rem)
+                continue
+            elif m_age:
+                state = 'AGE'
+                continue
+                
+            if state == 'NAME':
+                voter_lines.append(l)
+            elif state == 'REL':
+                rel_lines.append(l)
+            elif state == 'HOUSE':
+                house_lines.append(l)
+                
+        voter_name_raw = ' '.join(voter_lines)
+        voter_name_clean = self.clean_name(voter_name_raw)
+        
+        rel_name_raw = strip_card_label_bleeds(' '.join(rel_lines))
+        rel_name_clean = self.clean_name(rel_name_raw)
+        
+        door_no_raw = ' '.join(house_lines)
+        door_no_clean = normalize_door_number(door_no_raw)
 
-        # 4. Door / House Number
-        door_no_clean = ''
-        door_no_raw = ''
-        house_m = re.search(
-            r'(?:[HhlI1|]?[o0eau]us[ea]?|Howse|Hous|Inti|D\.?No|H\.?No|ఇంటి\s*(?:సంఖ్య|నెం|నంబరు)?|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]+([^\n\r]+)',
-            full_text,
-            re.I
-        )
-        if house_m:
-            door_no_raw = house_m.group(1).strip()
-            door_no_clean = normalize_door_number(door_no_raw)
-
-        # 5. Age (Non-Greedy Bottom-Up Parsing)
+        # 5. Age (Non-Greedy Bottom-Up Parsing with optical repair)
         age = extract_valid_age(full_text)
 
-        # 6. Gender
+        # 6. Gender Extraction
         gender = '-'
         if re.search(r'పురుషు|పురుషులు', full_text):
             gender = 'Male'
@@ -532,22 +564,22 @@ class VoterCardParser:
             gender = 'Female'
         else:
             gender_m = re.search(
-                r'(?:Gend[eao]r|Gencler|Ganclar|Gander|Lingamu|Gend)\s*[:*+=;>?\-\.\'\"it1l|/\\!\}\]\s]{0,6}(M[ao][l1i][eaos]|F[ea][mr]n?[aei][l1i][eaos]|Third|Transgender)',
+                r'(?:Gend[eao]r|Gencler|Ganclar|Gander|Lingamu|Gend)\s*[:*+=;>?\-\.\'\"it1l|/\\!\}\]\s]{0,6}(M[ao][l1i][eaos]|F[aeo][a-z]{1,6}[l1ieaos]?|Third|Transgender)',
                 full_text,
                 re.I
             )
             if gender_m:
                 g_str = gender_m.group(1).lower()
-                if 'f' in g_str:
+                if g_str.startswith('f'):
                     gender = 'Female'
-                elif 'm' in g_str:
+                elif g_str.startswith('m'):
                     gender = 'Male'
                 elif 'third' in g_str or 'trans' in g_str:
                     gender = 'Third Gender'
             else:
-                if re.search(r'\b(F[ea][mr]n?[aei][l1i][eaos])\b', full_text, re.I):
+                if re.search(r'\b(F[aeo][a-z]{1,6}[l1ieaos]?|Female|Famale|Farmale|Farmnale|Femate|Famala|Famaia)\b', full_text, re.I):
                     gender = 'Female'
-                elif re.search(r'\b(M[ao][l1i][eaos])\b', full_text, re.I):
+                elif re.search(r'\b(M[ao][l1i][eaos]|Male|Mle|Mlae)\b', full_text, re.I):
                     gender = 'Male'
 
         if gender == '-' and rel_type == 'Husband':

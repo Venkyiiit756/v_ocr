@@ -70,8 +70,8 @@ class DualZoneOCREngine:
         # Zone A2: Pure Isolated EPIC Box (Top Right: 2% to 22% height, 44% to 98% width)
         zone_a2 = card_gray[int(round(0.02 * h)):int(round(0.22 * h)), int(round(0.44 * w)):int(round(0.98 * w))]
         
-        # Zone B: Pure Demographics Body (Left 76% width, 20% to 98% height - strictly excludes Photo Box on right 76%-100%!)
-        zone_b = card_gray[int(round(0.20 * h)):int(round(0.98 * h)), 0:int(round(0.76 * w))]
+        # Zone B: Pure Demographics Body (Left 76% width, 17% to 100% height - strictly excludes Photo Box on right 76%-100%!)
+        zone_b = card_gray[int(round(0.17 * h)):h, 0:int(round(0.76 * w))]
         
         return zone_a1, zone_a2, zone_b
 
@@ -128,14 +128,19 @@ class DualZoneOCREngine:
             if epic_text:
                 break
         
-        # 3. Zone B (Demographics): 1.8x scaling + thread-local CLAHE contrast normalization, PSM 6
-        scaled_b = cv2.resize(zone_b, (0, 0), fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced_b = clahe.apply(scaled_b)
+        # 3. Zone B (Demographics): Native 300 DPI (no interpolation noise), PSM 6
         body_config = "-c tessedit_char_blacklist=§©®¢°~\\{}[]|`^$#@*"
         if self.user_words_path and os.path.exists(self.user_words_path):
             body_config += f" -c user_words_file={self.user_words_path}"
-        demo_text = self._run_tesseract(enhanced_b, body_config, psm=6, lang=self.ocr_lang)
+        demo_text = self._run_tesseract(zone_b, body_config, psm=6, lang=self.ocr_lang)
+        
+        # Adaptive Demographic Fallback for Age:
+        # If age is not detected in demo_text, crop targeted age row (40% to 75% height)
+        if not parser_h.extract_valid_age(demo_text):
+            age_crop = card_gray[int(round(0.40 * h)):int(round(0.75 * h)), 0:int(round(0.76 * w))]
+            age_dump = self._run_tesseract(age_crop, body_config, psm=6, lang=self.ocr_lang)
+            if age_dump:
+                demo_text = f"{demo_text}\n{age_dump}"
         
         # Composite text dump for parser
         full_dump = f"{sno_text} {epic_text}\n{demo_text}"
