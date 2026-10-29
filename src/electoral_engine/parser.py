@@ -48,8 +48,8 @@ SPLIT_SURNAME_MAP = {
 RE_AGE_BOTTOM_UP = re.compile(
     r'(?:^|(?<=[\s\n\r0-9]))'
     r'(?:[0-9]?Ag[e\?@aoc]|Age|Vayassu)\b'
-    r'[^\d\n\r]{0,4}'
-    r'(\d{2,3})',
+    r'[^\d\n\r\/\?]{0,4}'
+    r'([0-9\/\?]{2,3})',
     re.IGNORECASE
 )
 
@@ -57,17 +57,19 @@ def extract_valid_age(ocr_text: str) -> Optional[int]:
     """
     Extracts elector age without swallowing the leading '1' in 18 and 19-year-olds.
     Searches bottom-up to avoid collisions with names like Nageswararao.
+    Recovers dot-matrix slashed glyphs ('/' and '?' -> 7).
     """
     if not ocr_text:
         return None
     for match in reversed(list(RE_AGE_BOTTOM_UP.finditer(ocr_text))):
-        raw_digits = match.group(1)
-        val = int(raw_digits)
-        if val > 110 and len(raw_digits) == 3:
-            if raw_digits[0] in ('1', '7') and 18 <= int(raw_digits[1:]) <= 110:
-                val = int(raw_digits[1:])
-        if 18 <= val <= 110:
-            return val
+        raw_digits = match.group(1).replace('/', '7').replace('?', '7')
+        if raw_digits.isdigit():
+            val = int(raw_digits)
+            if val > 110 and len(raw_digits) == 3:
+                if raw_digits[0] in ('1', '7') and 18 <= int(raw_digits[1:]) <= 110:
+                    val = int(raw_digits[1:])
+            if 18 <= val <= 110:
+                return val
     return None
 
 RE_DOOR_RAW = re.compile(
@@ -302,9 +304,11 @@ class VoterCardParser:
         cand = s.replace(' ', '').replace('-', '')
 
         # Dot-matrix border detachment & standard prefix restoration
-        cand = re.sub(r'^(WION|LION|MION|HION|TION|VION|LLON|IION)', 'UON', cand)
-        cand = re.sub(r'^(W0N|U0N|V0N|UQN|L0N)', 'UON', cand)
-        cand = re.sub(r'^[A-Z0-9]{1,2}(UON|WON|YOU|IMZ|BCK|GHZ|WUZ|CVB|FXF|BVFS|BVF)', r'\1', cand)
+        cand = re.sub(r'^(UION|VION|WION|LION|MION|HION|TION|LLON|IION|YON|CUON)', 'UON', cand)
+        cand = re.sub(r'^(W0N|U0N|V0N|UQN|L0N|WON0|UON0)', 'UON', cand)
+        cand = re.sub(r'^(BYVF|BVVF|BVE|BYF|BVP|BVFS|BVF\?)', 'BVF', cand)
+        cand = re.sub(r'^(WQN|WON|W0N)', 'WON', cand)
+        cand = re.sub(r'^[A-Z0-9]{1,2}(UON|WON|YOU|IMZ|BCK|GHZ|WUZ|CVB|FXF|BVFS|BVF|BQN|SGA|AYT)', r'\1', cand)
 
         cand = re.sub(r'^[A-Z]WU(?=[0-9]{7}$)', 'WUZ', cand)
         cand = re.sub(r'^(YOUM|YOUN)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{5}$)', 'YOU14', cand)

@@ -63,57 +63,70 @@ class DualZoneOCREngine:
 
     def crop_zones(self, card_gray: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         h, w = card_gray.shape[:2]
-        h_header = int(round(0.28 * h))
-        w_sno = int(round(0.35 * w))
         
-        # Zone A1: SNO Box
-        zone_a1 = card_gray[0:h_header, 0:w_sno]
-        # Zone A2: EPIC Box
-        zone_a2 = card_gray[0:h_header, w_sno:w]
+        # Zone A1: SNO Box (Top Left: 2% to 22% height, 2% to 45% width)
+        zone_a1 = card_gray[int(round(0.02 * h)):int(round(0.22 * h)), int(round(0.02 * w)):int(round(0.45 * w))]
         
-        # Zone B: Demographic Body (Left 78%, Y: 0.26*h to h)
-        y_demo_start = int(round(0.26 * h))
-        w_demo_end = int(round(0.78 * w))
-        zone_b = card_gray[y_demo_start:h, 0:w_demo_end]
+        # Zone A2: Pure Isolated EPIC Box (Top Right: 2% to 22% height, 44% to 98% width)
+        zone_a2 = card_gray[int(round(0.02 * h)):int(round(0.22 * h)), int(round(0.44 * w)):int(round(0.98 * w))]
+        
+        # Zone B: Pure Demographics Body (Left 76% width, 20% to 98% height - strictly excludes Photo Box on right 76%-100%!)
+        zone_b = card_gray[int(round(0.20 * h)):int(round(0.98 * h)), 0:int(round(0.76 * w))]
         
         return zone_a1, zone_a2, zone_b
 
     def ocr_card(self, card_gray: np.ndarray) -> Dict[str, Any]:
         zone_a1, zone_a2, zone_b = self.crop_zones(card_gray)
+        h, w = card_gray.shape[:2]
         
         # 1. Zone A1 (SNO): 2.0x bicubic scaling, PSM 7, digits whitelist
         scaled_a1 = cv2.resize(zone_a1, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         sno_text = self._run_tesseract(scaled_a1, "-c tessedit_char_whitelist=0123456789", psm=7)
         
-        # 2. Zone A2 (EPIC): 2.0x bicubic scaling, PSM 6 with whitelist and line-level extraction
-        scaled_a2 = cv2.resize(zone_a2, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        raw_epic_dump = self._run_tesseract(
-            scaled_a2, 
-            "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/?-", 
-            psm=6
-        )
+        # 2. Zone A2 (EPIC): Adaptive 3-tier multi-crop & multi-PSM extraction
         epic_text = ""
         parser_h = VoterCardParser()
-        for line in raw_epic_dump.splitlines():
-            line_str = line.strip().upper()
-            if not line_str:
-                continue
-            norm = parser_h.normalize_epic_candidate(line_str)
-            if norm:
-                epic_text = norm
-                break
-            for tok in line_str.split():
-                norm = parser_h.normalize_epic_candidate(tok)
+        whitelist_cfg = "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/?-"
+        
+        crop_tiers = [
+            (card_gray[int(round(0.02 * h)):int(round(0.22 * h)), int(round(0.44 * w)):int(round(0.98 * w))], [7, 8, 6]),
+            (card_gray[int(round(0.04 * h)):int(round(0.20 * h)), int(round(0.44 * w)):int(round(0.98 * w))], [8, 7]),
+            (card_gray[int(round(0.04 * h)):int(round(0.20 * h)), int(round(0.55 * w)):int(round(0.98 * w))], [8, 7]),
+            (card_gray[int(round(0.03 * h)):int(round(0.18 * h)), int(round(0.55 * w)):int(round(0.98 * w))], [8, 7]),
+            (card_gray[int(round(0.05 * h)):int(round(0.18 * h)), int(round(0.45 * w)):int(round(0.98 * w))], [7, 8]),
+            (card_gray[int(round(0.02 * h)):int(round(0.22 * h)), int(round(0.35 * w)):int(round(0.98 * w))], [7, 8]),
+            (card_gray[int(round(0.03 * h)):int(round(0.22 * h)), int(round(0.60 * w)):int(round(0.98 * w))], [8, 7])
+        ]
+        
+        for crop_img, psms in crop_tiers:
+            scaled = cv2.resize(crop_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            for psm in psms:
+                raw_epic_dump = self._run_tesseract(scaled, whitelist_cfg, psm=psm)
+                if not raw_epic_dump:
+                    continue
+                norm = parser_h.normalize_epic_candidate(raw_epic_dump)
                 if norm:
                     epic_text = norm
                     break
+                for line in raw_epic_dump.splitlines():
+                    line_str = line.strip().upper()
+                    if not line_str:
+                        continue
+                    norm = parser_h.normalize_epic_candidate(line_str)
+                    if norm:
+                        epic_text = norm
+                        break
+                    for tok in line_str.split():
+                        norm = parser_h.normalize_epic_candidate(tok)
+                        if norm:
+                            epic_text = norm
+                            break
+                    if epic_text:
+                        break
+                if epic_text:
+                    break
             if epic_text:
                 break
-        if not epic_text and raw_epic_dump.strip():
-            first_l = raw_epic_dump.splitlines()[0] if raw_epic_dump.splitlines() else raw_epic_dump
-            cand = re.sub(r'[^A-Z0-9]', '', first_l.strip().upper())
-            if len(cand) >= 7:
-                epic_text = cand
         
         # 3. Zone B (Demographics): 1.8x scaling + thread-local CLAHE contrast normalization, PSM 6
         scaled_b = cv2.resize(zone_b, (0, 0), fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
