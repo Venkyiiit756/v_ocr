@@ -58,6 +58,7 @@ SIR_Revision_PDFs/
 *.tif
 *.tiff
 *.wav
+*.parquet
 deip_cache_*.json
 partial_*.json
 test_tmp.pdf

@@ -66,35 +66,35 @@ def get_db() -> ElectoralDatabaseAdapter:
 # ---------------------------------------------------------------------------
 class ElectorRecordResponse(BaseModel):
     elector_id: str
-    assembly_constituency_no: int
-    assembly_constituency_name: str
-    assembly_part_no: int
-    booth_sno: int
-    epic_no: str
-    voter_name_en: str
+    assembly_constituency_no: int = 37
+    assembly_constituency_name: str = "Pithapuram"
+    assembly_part_no: int = 1
+    booth_sno: int = 1
+    epic_no: str = "-"
+    voter_name_en: str = "-"
     voter_name_te: Optional[str] = None
-    rel_type: str
-    rel_name_en: str
+    rel_type: Optional[str] = "-"
+    rel_name_en: Optional[str] = "-"
     rel_name_te: Optional[str] = None
-    door_no: str
-    normalized_door_no: str
+    door_no: Optional[str] = "-"
+    normalized_door_no: Optional[str] = "-"
     age: Optional[int] = None
-    gender: str
-    linguistic_group: str
-    status: str
-    mean_card_conf: float
-    raw_ocr_dump: str
-    source_pdf_filename: str
-    page_no: int
-    box_index: int
-    bbox_x: int
-    bbox_y: int
-    bbox_w: int
-    bbox_h: int
-    crop_image_s3_uri: str
-    household_cluster_key: str
-    audit_trail: Any
-    engine_version: str
+    gender: Optional[str] = "-"
+    linguistic_group: Optional[str] = "T"
+    status: Optional[str] = "Active"
+    mean_card_conf: Optional[float] = 0.0
+    raw_ocr_dump: Optional[str] = ""
+    source_pdf_filename: Optional[str] = ""
+    page_no: Optional[int] = 1
+    box_index: Optional[int] = 1
+    bbox_x: Optional[int] = 0
+    bbox_y: Optional[int] = 0
+    bbox_w: Optional[int] = 0
+    bbox_h: Optional[int] = 0
+    crop_image_s3_uri: Optional[str] = ""
+    household_cluster_key: Optional[str] = "-"
+    audit_trail: Any = []
+    engine_version: Optional[str] = "DEIP-2.2.0"
 
 
 class ManualOverrideRequest(BaseModel):

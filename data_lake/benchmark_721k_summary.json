@@ -1,0 +1,53 @@
+{
+  "grand_total_records": 721735,
+  "delta": 0,
+  "total_csv_mb": 74.07,
+  "total_parquet_mb": 48.35,
+  "compression_ratio": 1.53,
+  "grand_total_seconds": 105.98,
+  "records_per_second": 6810.0,
+  "constituencies": {
+    "Pithapuram": {
+      "ac_no": 37,
+      "records_count": 236545,
+      "delta_from_expected": 353,
+      "csv_mb": 23.56,
+      "parquet_mb": 14.97,
+      "compression_ratio": 1.57,
+      "proximity_repairs": 508,
+      "read_sec": 1.17,
+      "proximity_sec": 17.37,
+      "parquet_export_sec": 5.71,
+      "total_sec": 24.25,
+      "throughput_rps": 9754.0
+    },
+    "Kakinada_Rural": {
+      "ac_no": 38,
+      "records_count": 270082,
+      "delta_from_expected": 9261,
+      "csv_mb": 28.88,
+      "parquet_mb": 19.15,
+      "compression_ratio": 1.51,
+      "proximity_repairs": 936,
+      "read_sec": 1.38,
+      "proximity_sec": 26.09,
+      "parquet_export_sec": 6.22,
+      "total_sec": 33.68,
+      "throughput_rps": 8020.0
+    },
+    "Peddapuram": {
+      "ac_no": 39,
+      "records_count": 215108,
+      "delta_from_expected": -9614,
+      "csv_mb": 21.63,
+      "parquet_mb": 14.23,
+      "compression_ratio": 1.52,
+      "proximity_repairs": 559,
+      "read_sec": 1.29,
+      "proximity_sec": 18.69,
+      "parquet_export_sec": 4.26,
+      "total_sec": 24.24,
+      "throughput_rps": 8875.0
+    }
+  }
+}

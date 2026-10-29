@@ -34,17 +34,18 @@ class DualZoneOCREngine:
     Dual-Zone OCR Engine for isolated Header (SNO & EPIC) and Body (Demographics) processing.
     Completely isolates Zone A from Zone B, eliminating the Tesseract table-border defect.
     """
-    def __init__(self, tesseract_cmd: Optional[str] = None, user_words_path: Optional[str] = None):
+    def __init__(self, tesseract_cmd: Optional[str] = None, user_words_path: Optional[str] = None, ocr_lang: str = "eng"):
         self.tess_exe = tesseract_cmd or shutil.which('tesseract') or r'C:\Users\vamsi\Tesseract-OCR\tesseract.exe'
         self.user_words_path = user_words_path
+        self.ocr_lang = ocr_lang
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-    def _run_tesseract(self, img_gray: np.ndarray, config: str, psm: int = 7) -> str:
+    def _run_tesseract(self, img_gray: np.ndarray, config: str, psm: int = 7, lang: str = "eng") -> str:
         padded = cv2.copyMakeBorder(img_gray, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
         success, buf = cv2.imencode('.png', padded)
         if not success:
             return ""
-        cmd = [self.tess_exe, 'stdin', 'stdout', '--psm', str(psm)]
+        cmd = [self.tess_exe, 'stdin', 'stdout', '-l', lang, '--psm', str(psm)]
         if config:
             cmd.extend(config.split())
         try:
@@ -94,7 +95,7 @@ class DualZoneOCREngine:
         body_config = "-c tessedit_char_blacklist=§©®¢°~\\{}[]|`^$#@*"
         if self.user_words_path and os.path.exists(self.user_words_path):
             body_config += f" -c user_words_file={self.user_words_path}"
-        demo_text = self._run_tesseract(enhanced_b, body_config, psm=6)
+        demo_text = self._run_tesseract(enhanced_b, body_config, psm=6, lang=self.ocr_lang)
         
         # Composite text dump for parser
         full_dump = f"{sno_text} {epic_text}\n{demo_text}"
@@ -111,13 +112,14 @@ class ElectoralPipelineEngine:
     """
     Enterprise Electoral Roll Ingestion & Provenance Engine.
     """
-    def __init__(self, tesseract_cmd: Optional[str] = None, workers: int = 4, target_dpi: int = 300):
+    def __init__(self, tesseract_cmd: Optional[str] = None, workers: int = 4, target_dpi: int = 300, ocr_lang: str = "eng"):
         self.tess_exe = tesseract_cmd or shutil.which('tesseract') or r'C:\Users\vamsi\Tesseract-OCR\tesseract.exe'
         self.workers = workers
         self.target_dpi = target_dpi
+        self.ocr_lang = ocr_lang
         self.detector = VoterCardDetector(target_dpi=target_dpi)
         self.parser = VoterCardParser()
-        self.dual_ocr = DualZoneOCREngine(tesseract_cmd=self.tess_exe)
+        self.dual_ocr = DualZoneOCREngine(tesseract_cmd=self.tess_exe, ocr_lang=ocr_lang)
 
     def process_pdf_page(self, pdf_path: str, page_num: int, part_no: int, ac_no: int = 37) -> List[Dict[str, Any]]:
         """

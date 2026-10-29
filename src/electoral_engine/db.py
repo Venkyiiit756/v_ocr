@@ -7,6 +7,7 @@ Supports Partitioned Master Electors Table, Trigram Search, and In-Memory SQLite
 import os
 import json
 import logging
+import threading
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
@@ -43,6 +44,7 @@ class ElectoralDatabaseAdapter:
         
         self.pg_pool = None
         self.sqlite_conn = None
+        self.lock = threading.Lock()
 
         if self.is_sqlite:
             sqlite_path = ":memory:"
@@ -239,45 +241,46 @@ class ElectoralDatabaseAdapter:
             return self._upsert_postgres(cleaned, actor)
 
     def _upsert_sqlite(self, cleaned: List[Dict[str, Any]], actor: str) -> Dict[str, int]:
-        cur = self.sqlite_conn.cursor()
-        sql = """
-        INSERT INTO master_electors (
-            elector_id, assembly_constituency_no, assembly_constituency_name, assembly_part_no, booth_sno, epic_no,
-            voter_name_en, voter_name_te, rel_type, rel_name_en, rel_name_te, door_no, normalized_door_no, age, gender,
-            linguistic_group, status, voter_name_raw, rel_name_raw, door_no_raw, mean_card_conf, token_confidences_json,
-            raw_ocr_dump, source_pdf_filename, source_pdf_sha256, page_no, box_index, bbox_x, bbox_y, bbox_w, bbox_h,
-            crop_image_s3_uri, household_cluster_key, audit_trail, engine_version
-        ) VALUES (
-            :elector_id, :assembly_constituency_no, :assembly_constituency_name, :assembly_part_no, :booth_sno, :epic_no,
-            :voter_name_en, :voter_name_te, :rel_type, :rel_name_en, :rel_name_te, :door_no, :normalized_door_no, :age, :gender,
-            :linguistic_group, :status, :voter_name_raw, :rel_name_raw, :door_no_raw, :mean_card_conf, :token_confidences_json,
-            :raw_ocr_dump, :source_pdf_filename, :source_pdf_sha256, :page_no, :box_index, :bbox_x, :bbox_y, :bbox_w, :bbox_h,
-            :crop_image_s3_uri, :household_cluster_key, :audit_trail, :engine_version
-        )
-        ON CONFLICT (assembly_constituency_no, elector_id) DO UPDATE SET
-            epic_no = excluded.epic_no,
-            voter_name_en = excluded.voter_name_en,
-            voter_name_te = excluded.voter_name_te,
-            rel_type = excluded.rel_type,
-            rel_name_en = excluded.rel_name_en,
-            rel_name_te = excluded.rel_name_te,
-            door_no = excluded.door_no,
-            normalized_door_no = excluded.normalized_door_no,
-            age = excluded.age,
-            gender = excluded.gender,
-            linguistic_group = excluded.linguistic_group,
-            status = excluded.status,
-            mean_card_conf = excluded.mean_card_conf,
-            token_confidences_json = excluded.token_confidences_json,
-            crop_image_s3_uri = excluded.crop_image_s3_uri,
-            household_cluster_key = excluded.household_cluster_key,
-            audit_trail = excluded.audit_trail,
-            updated_at = CURRENT_TIMESTAMP;
-        """
-        cur.executemany(sql, cleaned)
-        self.sqlite_conn.commit()
-        cur.close()
-        return {'inserted_or_updated': len(cleaned), 'audit_events': 0}
+        with self.lock:
+            cur = self.sqlite_conn.cursor()
+            sql = """
+            INSERT INTO master_electors (
+                elector_id, assembly_constituency_no, assembly_constituency_name, assembly_part_no, booth_sno, epic_no,
+                voter_name_en, voter_name_te, rel_type, rel_name_en, rel_name_te, door_no, normalized_door_no, age, gender,
+                linguistic_group, status, voter_name_raw, rel_name_raw, door_no_raw, mean_card_conf, token_confidences_json,
+                raw_ocr_dump, source_pdf_filename, source_pdf_sha256, page_no, box_index, bbox_x, bbox_y, bbox_w, bbox_h,
+                crop_image_s3_uri, household_cluster_key, audit_trail, engine_version
+            ) VALUES (
+                :elector_id, :assembly_constituency_no, :assembly_constituency_name, :assembly_part_no, :booth_sno, :epic_no,
+                :voter_name_en, :voter_name_te, :rel_type, :rel_name_en, :rel_name_te, :door_no, :normalized_door_no, :age, :gender,
+                :linguistic_group, :status, :voter_name_raw, :rel_name_raw, :door_no_raw, :mean_card_conf, :token_confidences_json,
+                :raw_ocr_dump, :source_pdf_filename, :source_pdf_sha256, :page_no, :box_index, :bbox_x, :bbox_y, :bbox_w, :bbox_h,
+                :crop_image_s3_uri, :household_cluster_key, :audit_trail, :engine_version
+            )
+            ON CONFLICT (assembly_constituency_no, elector_id) DO UPDATE SET
+                epic_no = excluded.epic_no,
+                voter_name_en = excluded.voter_name_en,
+                voter_name_te = excluded.voter_name_te,
+                rel_type = excluded.rel_type,
+                rel_name_en = excluded.rel_name_en,
+                rel_name_te = excluded.rel_name_te,
+                door_no = excluded.door_no,
+                normalized_door_no = excluded.normalized_door_no,
+                age = excluded.age,
+                gender = excluded.gender,
+                linguistic_group = excluded.linguistic_group,
+                status = excluded.status,
+                mean_card_conf = excluded.mean_card_conf,
+                token_confidences_json = excluded.token_confidences_json,
+                crop_image_s3_uri = excluded.crop_image_s3_uri,
+                household_cluster_key = excluded.household_cluster_key,
+                audit_trail = excluded.audit_trail,
+                updated_at = CURRENT_TIMESTAMP;
+            """
+            cur.executemany(sql, cleaned)
+            self.sqlite_conn.commit()
+            cur.close()
+            return {'inserted_or_updated': len(cleaned), 'audit_events': 0}
 
     def _upsert_postgres(self, cleaned: List[Dict[str, Any]], actor: str) -> Dict[str, int]:
         columns = [
@@ -354,14 +357,16 @@ class ElectoralDatabaseAdapter:
     def get_elector_by_id(self, constituency_no: int, elector_id: str) -> Optional[Dict[str, Any]]:
         """Queries single elector by partition key and elector_id."""
         if self.is_sqlite:
-            cur = self.sqlite_conn.cursor()
-            cur.execute("""
-            SELECT * FROM master_electors 
-            WHERE assembly_constituency_no = ? AND elector_id = ?
-            """, (constituency_no, elector_id))
-            row = cur.fetchone()
-            cur.close()
-            return dict(row) if row else None
+            with self.lock:
+                cur = self.sqlite_conn.cursor()
+                cur.execute("""
+                SELECT * FROM master_electors 
+                WHERE assembly_constituency_no = ? AND elector_id = ?
+                """, (constituency_no, elector_id))
+                row = cur.fetchone()
+                res = dict(row) if row else None
+                cur.close()
+                return res
         else:
             conn = self.pg_pool.getconn()
             try:

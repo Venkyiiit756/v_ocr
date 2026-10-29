@@ -381,9 +381,9 @@ class VoterCardParser:
         n = str(raw_str).strip()
         n = re.sub(r'^[\)\]\(\[1\|!]+4(?=[A-Za-z])', 'A', n)
         n = re.sub(r'^[\)\]\(\[0-9\|!:\+\-\.\,;\?~`\'\"_]+', '', n).strip()
-        n = re.sub(r'^(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|Peru)[s\'’]*\s*[:*=\?;\+\s\-]*', '', n, flags=re.I)
+        n = re.sub(r'^(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|Peru|పేరు|తండ్రి|భర్త|తల్లి)[s\'’]*\s*[:*=\?;\+\s\-]*', '', n, flags=re.I)
         n = re.sub(r'^t\s+(?=[A-Z]{2,})', '', n)
-        n = re.sub(r'\b(Photo|Available|Fhoto|House|Howse|Age|Gender|Ganclar|Gander|Male|Female)\b.*', '', n, flags=re.I)
+        n = re.sub(r'\b(Photo|Available|Fhoto|House|Howse|Age|Gender|Ganclar|Gander|Male|Female|ఇంటి|వయస్సు|లింగము|పురుషులు|స్త్రీలు)\b.*', '', n, flags=re.I)
         n = re.sub(r'([A-Za-z]+)[!|1]\b', r'\g<1>I', n)
 
         # Apply empirical token-level transformations
@@ -392,9 +392,9 @@ class VoterCardParser:
         rejoined_tokens = rejoin_split_surnames(repaired_tokens)
         n = ' '.join(rejoined_tokens)
 
-        n = re.sub(r'[^A-Za-z\s\.\']+', ' ', n)
+        n = re.sub(r'[^A-Za-z\u0C00-\u0C7F\s\.\']+', ' ', n)
         n = re.sub(r'\s+', ' ', n).strip(' .-')
-        if len(n) < 2 or not any(ch.isalpha() for ch in n):
+        if len(n) < 2 or not any(ch.isalpha() or ('\u0C00' <= ch <= '\u0C7F') for ch in n):
             return ''
         return n
 
@@ -444,15 +444,15 @@ class VoterCardParser:
         voter_name_clean = ''
         voter_name_raw = ''
         for idx_l, line in enumerate(lines):
-            if re.search(r'\b(Father|Fathar|Fether|Husband|Hushend|Mother|Mothar|Other|Guardian)[s\'’]*\b', line, re.I):
+            if re.search(r'\b(Father|Fathar|Fether|Husband|Hushend|Mother|Mothar|Other|Guardian|తండ్రి|భర్త|తల్లి)[s\'’]*\b', line, re.I):
                 continue
-            nm = re.search(r'\b(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Nane|Peru|Voter\s*Name)\s*[:*+=;>\?\-\s]*(.*)', line, re.I)
+            nm = re.search(r'(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Nane|Peru|Voter\s*Name|పేరు|ఓటరు\s*పేరు)\s*[:*+=;>\?\-\s]*(.*)', line, re.I)
             if nm:
                 voter_name_raw = nm.group(1)
                 cand_name = self.clean_name(voter_name_raw)
                 if not cand_name and idx_l + 1 < len(lines):
                     nxt = lines[idx_l + 1]
-                    if not re.search(r'\b(Father|Fathar|Fether|Husband|Hushend|Mother|Mothar|Other|Guardian|House|Howse|Age|Gender)\b', nxt, re.I):
+                    if not re.search(r'\b(Father|Fathar|Fether|Husband|Hushend|Mother|Mothar|Other|Guardian|House|Howse|Age|Gender|తండ్రి|భర్త|తల్లి|ఇంటి|వయస్సు|లింగము)\b', nxt, re.I):
                         voter_name_raw = nxt
                         cand_name = self.clean_name(nxt)
                 if cand_name:
@@ -464,19 +464,19 @@ class VoterCardParser:
         rel_name_clean = ''
         rel_name_raw = ''
         rel_m = re.search(
-            r'(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian)[s\'’]*(?:\s*(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane))?\s*[:*+=;>\?\-\!\|/\\\s]+([^\n\r]+)',
+            r'(Father|Fathar|Fether|Husband|Hushend|Hushand|Husban|Mother|Mothar|Mether|Other|Otners|Othars|Otliers|Guardian|తండ్రి|భర్త|తల్లి|సంరక్షకుని|ఇతర)[s\'’]*(?:\s*(?:Name|Mame|Namie|Narne|Narre|Nama|Narme|Namet|Warne|Nate|Nane|పేరు))?\s*[:*+=;>\?\-\!\|/\\\s]+([^\n\r]+)',
             full_text,
             re.I
         )
         if rel_m:
             raw_rt = rel_m.group(1).lower()
-            if raw_rt.startswith('f'):
+            if raw_rt.startswith('f') or 'తండ్రి' in raw_rt:
                 rel_type = 'Father'
-            elif raw_rt.startswith('h'):
+            elif raw_rt.startswith('h') or 'భర్త' in raw_rt:
                 rel_type = 'Husband'
-            elif raw_rt.startswith('m'):
+            elif raw_rt.startswith('m') or 'తల్లి' in raw_rt:
                 rel_type = 'Mother'
-            elif raw_rt.startswith('g'):
+            elif raw_rt.startswith('g') or 'సంరక్ష' in raw_rt:
                 rel_type = 'Guardian'
             else:
                 rel_type = 'Other'
@@ -487,7 +487,7 @@ class VoterCardParser:
         door_no_clean = ''
         door_no_raw = ''
         house_m = re.search(
-            r'(?:[HhlI1|]?[o0eau]us[ea]?|Howse|Hous|Inti|D\.?No|H\.?No|ఇంటి\s*నెం|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]+([^\n\r]+)',
+            r'(?:[HhlI1|]?[o0eau]us[ea]?|Howse|Hous|Inti|D\.?No|H\.?No|ఇంటి\s*(?:సంఖ్య|నెం|నంబరు)?|డోర్\s*నెం)\s*(?:Number|Numbar|Num|No)?\s*[:*+=;>?\}\]\-\.\'\"it!|/\s]+([^\n\r]+)',
             full_text,
             re.I
         )
@@ -500,24 +500,29 @@ class VoterCardParser:
 
         # 6. Gender
         gender = '-'
-        gender_m = re.search(
-            r'(?:Gend[eao]r|Gencler|Ganclar|Gander|Lingamu|Gend)\s*[:*+=;>?\-\.\'\"it1l|/\\!\}\]\s]{0,6}(M[ao][l1i][eaos]|F[ea][mr]n?[aei][l1i][eaos]|Third|Transgender)',
-            full_text,
-            re.I
-        )
-        if gender_m:
-            g_str = gender_m.group(1).lower()
-            if 'f' in g_str:
-                gender = 'Female'
-            elif 'm' in g_str:
-                gender = 'Male'
-            elif 'third' in g_str or 'trans' in g_str:
-                gender = 'Third Gender'
+        if re.search(r'పురుషు|పురుషులు', full_text):
+            gender = 'Male'
+        elif re.search(r'స్త్రీ|స్త్రీలు|మహిళ', full_text):
+            gender = 'Female'
         else:
-            if re.search(r'\b(F[ea][mr]n?[aei][l1i][eaos])\b', full_text, re.I):
-                gender = 'Female'
-            elif re.search(r'\b(M[ao][l1i][eaos])\b', full_text, re.I):
-                gender = 'Male'
+            gender_m = re.search(
+                r'(?:Gend[eao]r|Gencler|Ganclar|Gander|Lingamu|Gend)\s*[:*+=;>?\-\.\'\"it1l|/\\!\}\]\s]{0,6}(M[ao][l1i][eaos]|F[ea][mr]n?[aei][l1i][eaos]|Third|Transgender)',
+                full_text,
+                re.I
+            )
+            if gender_m:
+                g_str = gender_m.group(1).lower()
+                if 'f' in g_str:
+                    gender = 'Female'
+                elif 'm' in g_str:
+                    gender = 'Male'
+                elif 'third' in g_str or 'trans' in g_str:
+                    gender = 'Third Gender'
+            else:
+                if re.search(r'\b(F[ea][mr]n?[aei][l1i][eaos])\b', full_text, re.I):
+                    gender = 'Female'
+                elif re.search(r'\b(M[ao][l1i][eaos])\b', full_text, re.I):
+                    gender = 'Male'
 
         if gender == '-' and rel_type == 'Husband':
             gender = 'Female'
