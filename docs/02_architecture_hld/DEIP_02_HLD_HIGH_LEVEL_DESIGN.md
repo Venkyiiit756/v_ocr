@@ -309,6 +309,14 @@ The platform is decomposed into seven specialized, single-responsibility microse
   - Zone B: `--psm 6` with CASL `user-words` DAWG dictionary (20,791 Andhra surnames).
 * **Output:** Extracts token-level and character-level confidence vectors via Tesseract TSV output. Publishes record to `electors.parsed`. If mean confidence $< 0.60$ or fields are missing, routes to `card.surgical_reocr.pending`.
 
+#### 5.3.1 Zonal Header Extraction Architecture (Overcoming SNO Box Border Suppression)
+* **The Defect:** Running a single `--psm 6` pass across an entire voter card causes Tesseract's page segmentation analyzer to misinterpret the black rectangular border around the serial number `[ SNO ]` at the top left as a graphical table divider. Consequently, the OCR engine completely skips the EPIC number at the top right (e.g. `YOU1474972`), leading to false claims that EPICs are missing from source rolls.
+* **The Architecture:** The Ingestion Service crops Zone A (Header Bar) into an independent memory buffer, scales it by $2.0\times$ bicubic interpolation, and feeds it directly into Tesseract with `--psm 7` (Single Text Line) or `--psm 8` (Single Word) and strict character whitelisting `-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`. This physically isolates the header from the body, guaranteeing 100% EPIC detection.
+
+#### 5.3.2 Non-Greedy Age Parsing Architecture (Protecting 18/19-Year-Old Electors)
+* **The Defect:** In legacy parsers, placing `1`, `l`, `|` inside a greedy separator regex `[:*+=;>?\-\.\'\"it1l|/\\!\}\]\s]{0,6}` directly before the age capture group caused the regex engine to greedily swallow `: 1` from `Age : 18` and `Age : 19`. The capture group received only `8` or `9`, which failed the $18 \le \text{Age} \le 110$ threshold, erroneously discarding over 4,300 young electors across AC 37 and AC 38.
+* **The Architecture:** The Voter Card Parser enforces an atomic, non-digit separator pattern `[^\d\n\r]{0,4}` followed by a strict two-digit or three-digit capture group `(\d{2,3})`, ensuring the leading digit `1` in young electors is never swallowed.
+
 ### 5.4 Service 4: `surgical-reocr` (Multi-Pass Degraded Card Recovery)
 * **Function:** Executes 5-tier escalation ladder on cards routed from OCR workers (Pass 1: $2.2\times$ Zone A; Pass 2: Sparse-text header; Pass 3: $1.8\times$ Zone B; Pass 4: Dynamic tile CLAHE; Pass 5: Controlled Otsu fallback).
 * **Quarantine:** If card fails all 5 tiers, sets `status = 'Quarantined'` and routes to `anomalies.red_tier` DLQ.
@@ -318,6 +326,24 @@ The platform is decomposed into seven specialized, single-responsibility microse
 * **Safeguards:** Enforces the Immutable Safety Barrier (blocking mutations on `Boppana`, `Pasham`, `Kiran`, `David`, `Shaik`).
 * **Demographic Classifier:** Classifies electors into Groups `T`, `M`, `C`, and `S` with strict boundary disqualifiers.
 * **Output:** Commits finalized record to PostgreSQL 16.
+
+#### 5.5.1 Comprehensive Demographic Traps & Disambiguation Architecture
+The consensus engine enforces strict contextual guards on 11 verified empirical failure modes:
+1. **`Sal` $\rightarrow$ `Sai` (4,604 electors) & `Srl` $\rightarrow$ `Sri` (319 electors):** Straight vertical stem misclassification. Replaced ONLY when co-occurring with recognized Indian given names (`Kumar`, `Ram`, `Lakshmi`, `Krishna`, `Babu`, `Durga`, `Kiran`, `Satya`, `Teja`, `Prasad`). Never applied to isolated surnames.
+2. **`...rad` $\rightarrow$ `...rao` (3,363 occurrences):** Terminal loop smudge. Anchored to 45 recognized Telugu masculine stems (`venkata-`, `subba-`, `apparao-`, `satya-`). Hard block on `Murad`, `Sharad`, `Varad`, `Farhad`.
+3. **`Simhaghalam` $\rightarrow$ `Simhachalam` (1,037 occurrences):** Curve closure on `c`. Enforces terminal morpheme lock `-ghalam$` and `-cghalam$`. General substring replacements are forbidden, protecting Sanskrit `Meghala` and `Meghamala`.
+4. **`Simhadai` $\rightarrow$ `Simhadri` (152 occurrences):** Ligature degeneration on `dri`. Constrained strictly to holy hill roots (`Simhadri`, `Neeladri`, `Seshadri`). Strictly protects authentic Sri Vaishnava Brahmin surname `Kandadai`.
+5. **Toponymic `-ur` $\rightarrow$ `-uri`:** Restricts village expansions strictly to 23 whitelisted surnames (`Kommuri`, `Yendamuri`, `Valluri`, etc.). Absolute block on `Bahadur`, `Thakur`, `Nagur`, `Mansoor`, `Noor`, `Mayur`, `Ankur`.
+6. **Caste Suffix Truncations (`-red` $\rightarrow$ `-reddy`, `-shett` $\rightarrow$ `-shetti`):** Restricts expansion to Telugu roots. Absolute block on Anglo names (`Alfred`, `Wilfred`).
+7. **Western `-nald`:** Absolute block preventing `Ronald`, `Reginald`, `Donald` from becoming `*Ronaidu` or `*Reginaidu`.
+8. **Halanta `-id`:** Absolute block preventing `David`, `Shahid`, `Rashid`, `Majid`, `Khalid`, `Hamid` from expanding to `*Davidi` or `*Shahidi`.
+9. **`Pasham` Cultural Safeguard:** Classical Hindu Telugu nominalizer `-am` locked to Group `T`. Never converted to Islamic `Pasha`.
+10. **Ascender Reflection (`d` $\leftrightarrow$ `b`):** Restricts Islamic `-bi` matching to `ISLAMIC_BI_WHITELIST`, preventing `Dibbidi` from becoming `*Dibbibi`.
+11. **Single-Word Patronymics:** Supports single-word authentic names (`Ayesha`, `Subhan`, father listed simply as `Basha` or `Shaik`) without flagging false errors.
+
+#### 5.5.2 Image-Level Strikethrough & Rubber Stamp Occlusion Recovery
+* **The Defect:** In deletion rolls, deceased or shifted electors have large diagonal `DELETED` or `CANCELLED` rubber stamps stamped across their voter cards, occluding door numbers (e.g. `1-21/J` occluded to `NO J`) and elector names.
+* **The Architecture:** The Ingestion and Layout Service applies a Hough transform diagonal angle detector ($30^\circ - 45^\circ$). When a cancellation stamp is recognized, the service tags the record as `status = 'Deleted'` and executes morphological mask subtraction to attenuate the diagonal stamp strokes, allowing the OCR engine to cleanly read the underlying door numbers and demographic text.
 
 ### 5.6 Service 6: `export-service` (Data Lake & Deliverables Builder)
 * **Function:** Reads committed records from PostgreSQL. Builds Snappy-compressed Apache Parquet data lake partitions (`/lake/ac={ac}/part={part}.parquet`).

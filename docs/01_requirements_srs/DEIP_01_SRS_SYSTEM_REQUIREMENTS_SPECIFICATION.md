@@ -211,9 +211,10 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   - Pithapuram (AC 37): `YOUM` $\rightarrow$ `YOU14`, `YOUN` $\rightarrow$ `YOU1`, `Y0U`/`YQU`/`VOU`/`YDU` $\rightarrow$ `YOU`, `BOCK`/`8CK`/`BCR` $\rightarrow$ `BCK`.
   - Kakinada Rural (AC 38): `IMZN` $\rightarrow$ `IMZ1`, `IM2Z`/`IMUZ`/`INZ`/`1MZ`/`LMZ` $\rightarrow$ `IMZ`, `U0N`/`VON` $\rightarrow$ `UON`, `GH2`/`GZ`/`CHZ` $\rightarrow$ `GHZ`.
   - Peddapuram (AC 39): `WUZM` $\rightarrow$ `WUZ14`, `WLZM`/`WIZM` $\rightarrow$ `WUZ`, `AP` series.
-* **FR-15 (Age Bounding & High-Age Zonal Re-OCR):**  
+* **FR-15 (Age Bounding, High-Age Re-OCR & The Young Elector Separator Invariant):**  
   - Age values shall be validated against the physiological bound $18 \le \text{Age} \le 110$.
   - Age parsing shall search tokens from the bottom-up using strict word boundaries to prevent substring collisions with elector names (e.g. `Nageswararao`).
+  - **Young Elector Regex Invariant (Eliminating 18/19 Swallowing):** The age token capture regex MUST strictly forbid digits (`0-9`) and ambiguous vertical stems (`1`, `l`, `|`, `I`) inside its preceding separator character class `[:*+=;>?\-\.\'\"\s]{0,6}` prior to the age capture group. In historical runs, placing `1` inside the greedy separator class caused the regex engine to greedily swallow `: 1` from `Age : 18` and `Age : 19`, leaving only `8` or `9`, which subsequently failed the $18 \le \text{Age} \le 110$ threshold and erroneously discarded over 4,300 young electors across AC 37 and AC 38.
   - **Age 97 Re-OCR Trigger:** If an extracted age is $\ge 90$ or exactly `97`, the system shall trigger a surgical re-OCR with high-contrast CLAHE to distinguish between genuine centenarians and faint `27`, `37`, or `47`.
 * **FR-16 (Gender Normalization & Inferencing):**  
   - Gender shall be standardized to `Male`, `Female`, or `Third Gender`.
@@ -224,6 +225,9 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
 ### 4.5 Linguistic Engine & Demographic Safeguards
 * **FR-18 (128 Deterministic Optical Glyph Confusions):**  
   The token engine shall apply the complete catalog of 128 verified optical glyph replacements:
+  - Dotless 'I' $\rightarrow$ 'L' Confusion: `Sal` $\rightarrow$ `Sai` (4,604 empirical electors) and `Srl` $\rightarrow$ `Sri` (319 empirical electors) with contextual Indian given-name anchor guard.
+  - Guttural/Palatal Curve Closure: `Simhaghalam` $\rightarrow$ `Simhachalam` (1,037 empirical electors) with terminal morpheme lock protecting `Meghala`.
+  - Fused Ligatures: `Simhadai` $\rightarrow$ `Simhadri` (152 empirical electors) with strict protection for Sri Vaishnava `Kandadai`.
   - Ascender loops: `cl` $\rightarrow$ `d` (`prasacl` $\rightarrow$ `prasad`, `kacliyala` $\rightarrow$ `kadiyala`).
   - Mirror ascenders: `d` $\leftrightarrow$ `b` (`tatapubi` $\rightarrow$ `Tatapudi`, `surampubi` $\rightarrow$ `Surampudi`, `mummibi` $\rightarrow$ `Mummadi`).
   - Kerning fusions: `rn` $\rightarrow$ `m` in standard Telugu roots (`rarnana` $\rightarrow$ `ramana`, `arnma` $\rightarrow$ `amma`), protected from mutating `PROTECTED_RN`.
@@ -244,8 +248,9 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   1. **Absolute Vocalic Immunity:** Classical Telugu micro-surnames (`Boppana`, `Chavala`, `Peeta`, etc.) ending in valid vowels shall never have consonants or vowels added.
   2. **`Pasham` Cultural Safeguard:** Classical Hindu Telugu nominalizer `-am` shall be protected; `Pasham` must never be modified or classified as Islamic `Pasha`.
   3. **Sanskrit Halanta Blocklist (`PROTECTED_HALANTA_BLOCKLIST`):** Masculine halanta names ending in consonants (`Kiran`, `Charan`, `Pavan`, `Kalyan`, `Kumar`, `Naveen`, `Praveen`, `Prasad`, `Bharath`, `Siddharth`) shall never be suffixed with Ajanta vowels.
-  4. **Anglo-Christian Blocklist (`CHRISTIAN_TOKENS`):** Biblical given names (`David`, `John`, `Paul`, `Peter`, `Samuel`, `Daniel`, `Joseph`, `Stephen`, `Philip`, `Thomas`, `James`, `Jacob`, `Mary`, `Martha`) shall never be modified.
-  5. **Islamic Nomenclature Safeguards (`ISLAMIC_TOKENS`):** Arabic/Urdu names (`Shaik`, `Syed`, `Pathan`, `Khan`, `Mohammad`, `Hussain`, `Hameed`, `Rasheed`, `Bibi`, `Khatoon`) shall never have Telugu suffixes appended.
+  4. **Anglo-Christian & Western Blocklist:** Biblical and Anglo given names (`David`, `John`, `Paul`, `Peter`, `Samuel`, `Daniel`, `Joseph`, `Stephen`, `Philip`, `Thomas`, `James`, `Jacob`, `Mary`, `Martha`, `Alfred`, `Wilfred`, `Ronald`, `Reginald`, `Donald`) shall never be modified or converted to Telugu titles (e.g. `Alfred` must never become `*Alfreddy`, `Ronald` must never become `*Ronaidu`).
+  5. **Islamic Nomenclature Safeguards (`ISLAMIC_TOKENS`):** Arabic/Urdu names (`Shaik`, `Syed`, `Pathan`, `Khan`, `Mohammad`, `Hussain`, `Hameed`, `Rasheed`, `Bibi`, `Khatoon`, `Murad`, `Sharad`, `Varad`, `Farhad`) shall never have Telugu suffixes appended (e.g. `Murad` must never become `*Murao`).
+  6. **Sacred Lineage & Toponymic Guards:** `Kandadai` (Sri Vaishnava Brahmin surname) must never become `*Kandadri`; `Bahadur`, `Thakur`, `Nagur`, `Mansoor`, `Noor`, `Mayur` must never become `*Bahaduri`; `Meghala` must never become `*Mechala`.
 
 ### 4.6 Spatial Household Graph & Bayesian Consensus Engine
 * **FR-23 (Bipartite Household Graph Construction):**  
@@ -354,8 +359,9 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   *Boundary Guards:* Strictly enforce disqualifiers so `Bhanu`, `Valli`, `Yakub`, `Nagur`, `Kaja`, `Md`, `Abhishek`, and `Mounisha` never leak into incorrect demographic groups.
 * **FR-41 (Bilingual Cross-Script Disambiguation):**  
   For bilingual electoral rolls, where English OCR confidence on a name token is $< 0.70$, the system shall OCR the parallel Telugu script box (`tel` traineddata) to cross-verify and disambiguate vowels and retroflex consonants.
-* **FR-42 (Form 7 Deletion Strikethrough Processing):**  
-  On deletion supplement pages, the system shall detect diagonal cancel lines via Hough transforms, flag the elector as `STATUS_DELETED`, and preserve the underlying demographic record for administrative audit.
+* **FR-42 (Form 7 Deletion Strikethrough & Rubber Stamp Occlusion Processing):**  
+  - On deletion supplement pages, the system shall detect diagonal cancel lines via Hough transforms, flag the elector as `STATUS_DELETED`, and preserve the underlying demographic record for administrative audit.
+  - **Diagonal `DELETED` Rubber Stamp Occlusion Recovery:** Where deceased or shifted electors have large diagonal `DELETED` or `CANCELLED` rubber stamps stamped across their card (e.g. crossing over door number `1-21/J` causing OCR to read `NO J`), the image preprocessor shall detect diagonal text angles ($30^\circ - 45^\circ$), tag `status = 'Deleted'`, and apply morphological line subtraction to recover the occluded underlying door numbers and elector names.
 
 ---
 
