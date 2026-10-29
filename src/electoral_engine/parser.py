@@ -301,6 +301,11 @@ class VoterCardParser:
         s = re.sub(r'^\s*[0-9ILF]{1,4}\s+', '', s)
         cand = s.replace(' ', '').replace('-', '')
 
+        # Dot-matrix border detachment & standard prefix restoration
+        cand = re.sub(r'^(WION|LION|MION|HION|TION|VION|LLON|IION)', 'UON', cand)
+        cand = re.sub(r'^(W0N|U0N|V0N|UQN|L0N)', 'UON', cand)
+        cand = re.sub(r'^[A-Z0-9]{1,2}(UON|WON|YOU|IMZ|BCK|GHZ|WUZ|CVB|FXF|BVFS|BVF)', r'\1', cand)
+
         cand = re.sub(r'^[A-Z]WU(?=[0-9]{7}$)', 'WUZ', cand)
         cand = re.sub(r'^(YOUM|YOUN)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{5}$)', 'YOU14', cand)
         cand = re.sub(r'^(YOUN|YOUT|YOUI|YOUL)(?=[0-9OQDZI|lTBSGAU/\?EPCR]{6}$)', 'YOU1', cand)
@@ -324,6 +329,12 @@ class VoterCardParser:
         cand = re.sub(r'^(FRF|FAF|FSF|FMF)', 'FXF', cand)
         cand = re.sub(r'^(=GA|5GA|\$GA)', 'SGA', cand)
         cand = re.sub(r'^(BON|=QN)', 'BQN', cand)
+
+        # Embedded candidate pattern extraction if fused with adjacent text
+        if len(cand) > 10:
+            m_emb = re.search(r'([A-Z]{3,4}[0-9OQDZITBSGAUEPCR\?/\-]{6,8})', cand)
+            if m_emb:
+                cand = m_emb.group(1)
 
         if len(cand) < 9 or len(cand) > 13:
             return None
@@ -349,7 +360,7 @@ class VoterCardParser:
                     raw_suffix = raw_suffix.replace(twin, single, 1)
                     break
 
-        min_digits = 2 if prefix in ('YOU', 'BCK', 'IMZ', 'GHZ', 'UON', 'WUZ', 'WUF', 'HSF', 'CVB', 'FXF', 'SGA', 'BQN') else 4
+        min_digits = 2 if prefix in ('YOU', 'BCK', 'IMZ', 'GHZ', 'UON', 'WON', 'WUZ', 'WUF', 'HSF', 'CVB', 'FXF', 'SGA', 'BQN', 'BVFS', 'BVF') else 4
         if sum(1 for ch in raw_suffix if ch.isdigit()) < min_digits:
             return None
 
@@ -367,6 +378,8 @@ class VoterCardParser:
         suffix_str = ''.join(cleaned_suffix)
         if len(suffix_str) == 7:
             return prefix + suffix_str
+        elif len(suffix_str) == 6:
+            return prefix + '0' + suffix_str
         elif len(suffix_str) == 8:
             if suffix_str[0] in ('1', '9', '0', '2'):
                 return prefix + suffix_str[1:]
@@ -416,10 +429,19 @@ class VoterCardParser:
         extracted_sno = fallback_sno
         extracted_epic = None
 
-        for hdr_line in lines[:2]:
+        for hdr_line in lines[:3]:
+            if re.search(r'\b(Name|Mame|Father|Husband|Mother|House|Age|Gender|పేరు|తండ్రి|భర్త)\b', hdr_line, re.I):
+                break
             norm = self.normalize_epic_candidate(hdr_line)
             if norm:
                 extracted_epic = norm
+                break
+            for tok in hdr_line.split():
+                norm = self.normalize_epic_candidate(tok)
+                if norm:
+                    extracted_epic = norm
+                    break
+            if extracted_epic:
                 break
 
         header_m = re.search(r'^\s*([0-9il]{1,4})\s+([A-Z0-9=$\?/\s]{8,16})', full_text, re.M | re.I)

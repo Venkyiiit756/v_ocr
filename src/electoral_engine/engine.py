@@ -85,19 +85,33 @@ class DualZoneOCREngine:
         scaled_a1 = cv2.resize(zone_a1, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         sno_text = self._run_tesseract(scaled_a1, "-c tessedit_char_whitelist=0123456789", psm=7)
         
-        # 2. Zone A2 (EPIC): 2.0x bicubic scaling, PSM 6 with line-level pattern extraction
+        # 2. Zone A2 (EPIC): 2.0x bicubic scaling, PSM 6 with whitelist and line-level extraction
         scaled_a2 = cv2.resize(zone_a2, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        raw_epic_dump = self._run_tesseract(scaled_a2, "", psm=6)
+        raw_epic_dump = self._run_tesseract(
+            scaled_a2, 
+            "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/?-", 
+            psm=6
+        )
         epic_text = ""
-        for line in raw_epic_dump.split("\n"):
-            cand = re.sub(r'[^A-Z0-9]', '', line.strip().upper())
-            m = re.search(r'([A-Z]{2,4}[0-9]{6,8})', cand)
-            if m:
-                epic_text = m.group(1)
+        parser_h = VoterCardParser()
+        for line in raw_epic_dump.splitlines():
+            line_str = line.strip().upper()
+            if not line_str:
+                continue
+            norm = parser_h.normalize_epic_candidate(line_str)
+            if norm:
+                epic_text = norm
+                break
+            for tok in line_str.split():
+                norm = parser_h.normalize_epic_candidate(tok)
+                if norm:
+                    epic_text = norm
+                    break
+            if epic_text:
                 break
         if not epic_text and raw_epic_dump.strip():
-            # Fallback to alphanumeric token
-            cand = re.sub(r'[^A-Z0-9]', '', raw_epic_dump.strip().upper())
+            first_l = raw_epic_dump.splitlines()[0] if raw_epic_dump.splitlines() else raw_epic_dump
+            cand = re.sub(r'[^A-Z0-9]', '', first_l.strip().upper())
             if len(cand) >= 7:
                 epic_text = cand
         
