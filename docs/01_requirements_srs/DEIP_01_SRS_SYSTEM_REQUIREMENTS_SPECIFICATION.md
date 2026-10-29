@@ -1,7 +1,7 @@
 # Software Requirements Specification (SRS) & System Specification
-## Enterprise Distributed Electoral Intelligence Platform (DEIP V2.0)
+## Enterprise Distributed Electoral Intelligence Platform (DEIP V2.1)
 
-**Document Reference:** DEIP-SRS-V2.0-DEFINITIVE  
+**Document Reference:** DEIP-SRS-V2.1-DEFINITIVE  
 **Compliance Standard:** ISO/IEC/IEEE 29148:2018 / IEEE 830-1998  
 **Classification:** Census-Grade Demographic Ingestion & Electoral Intelligence Platform  
 **Target Scope:** 721,735 Electors across Pithapuram (AC 37), Kakinada Rural (AC 38), and Peddapuram (AC 39) $\rightarrow$ Extensible to 40,000,000+ Electors Statewide  
@@ -12,14 +12,14 @@
 ## 1. Introduction, Business Context & System Objectives
 
 ### 1.1 Purpose & Vision
-This document establishes the exhaustive, formal Software Requirements Specification (SRS) for the **Distributed Electoral Intelligence Platform (DEIP V2.0)**. 
+This document establishes the definitive Software Requirements Specification (SRS) for the **Distributed Electoral Intelligence Platform (DEIP V2.1)**. 
 
-DEIP V2.0 is an enterprise-tier, distributed, census-grade document processing and data intelligence platform engineered to ingest, extract, sanitize, reconcile, classify, audit, and analyze official Election Commission of India (ECI) scanned electoral rolls. The system transforms unstructured, degraded, dot-matrix, and multi-format PDF voter rolls into an authoritative, 100% provenance-backed ground-truth relational dataset with **zero tolerance for hallucination, zero dropped records, and 0.00% false positives** on protected demographic surnames.
+DEIP V2.1 is an enterprise-tier, distributed, census-grade document processing, optical character recognition (OCR), entity reconciliation, and demographic intelligence platform. The system ingests, extracts, sanitizes, classifies, audits, and analyzes official Election Commission of India (ECI) scanned electoral rolls. The system transforms unstructured, degraded, dot-matrix, and multi-format PDF voter rolls into an authoritative, 100% provenance-backed ground-truth relational dataset with **zero tolerance for hallucination, zero dropped records, and 0.00% false positives** on protected demographic surnames.
 
 ### 1.2 Core Problem Statement & Forensic Learnings
-Decades of programmatic electoral roll parsing in India have suffered from systemic engineering flaws:
+Decades of programmatic electoral roll parsing in India have suffered from systemic engineering defects:
 1. **Upstream Optical Character Recognition (OCR) Fragility:**  
-   Standard OCR engines (e.g. naive Tesseract, EasyOCR, cloud vision APIs) fail on low-resolution dot-matrix rolls, producing character stem splitting (`K` $\rightarrow$ `kik`/`kkl` in `Nakikaa`), faint ascender dropouts (`d` $\rightarrow$ `c` in `Macish`), dropped crossbars (`t` $\leftrightarrow$ `r` in `Peditedia`), rounded bottom fusions (`-rad`/`-rag` for `-rao`, `-babl` for `-babu`), and severed Telugu vowel diacritics.
+   Standard OCR engines (e.g. naive Tesseract, EasyOCR, commercial cloud vision APIs) fail on low-resolution dot-matrix rolls, producing character stem splitting (`K` $\rightarrow$ `kik`/`kkl` in `Nakikaa`), faint ascender dropouts (`d` $\rightarrow$ `c` in `Macish`), dropped crossbars (`t` $\leftrightarrow$ `r` in `Peditedia`), rounded bottom fusions (`-rad`/`-rag` for `-rao`, `-babl` for `-babu`), and severed Telugu vowel diacritics.
 2. **Permanent Loss of Data Lineage (The "Black Box" Defect):**  
    Legacy extraction pipelines stripped away PDF file origins, page numbers, card box indices, bounding box coordinates, optical confidence vectors, and raw unedited OCR dumps. As a result, when data anomalies arose, forensic auditing was impossible without manual PDF searching.
 3. **Boundary Ingestion Drift & Misalignment:**  
@@ -29,7 +29,7 @@ Decades of programmatic electoral roll parsing in India have suffered from syste
 5. **Operational Rigidity:**  
    Pipelines were built either strictly for offline batch files or strictly for manual browser downloads, lacking an autonomous, rate-limited crawler capable of solving voice CAPTCHAs, or a real-time observability and time-machine replay system.
 
-DEIP V2.0 is designed from first principles to resolve every one of these failure modes.
+DEIP V2.1 is engineered from first principles to resolve every one of these failure modes.
 
 ---
 
@@ -74,6 +74,11 @@ Each demographic card within the $10 \times 3$ matrix is physically divided into
   - Line 3: House / Door Number (`door_no`)
   - Line 4: Age (`age`) and Gender (`gender`)
 * **Zone C (Photograph Box - Bottom 78%, Right 28%):** Bounded photographic portrait box containing elector photo or `"Photo Available"` placeholder badge.
+
+### 2.2 Administrative Section Breaks & Revision Realities
+* **Administrative Section Breaks:** An ECI polling part covers multiple geographic streets or revenue segments. ECI formatting rules dictate that when a street section concludes, the remaining box slots on that page are left blank, and the next street section begins at Box 1 of the subsequent page. The system must never use division arithmetic to calculate page numbers.
+* **Form 7 Deletion Strikethroughs:** Deletion rolls feature heavy diagonal or horizontal strikethrough lines printed across the voter cards of deceased or shifted electors. The image processing pipeline must distinguish between the underlying text characters and the strikethrough stroke, setting `status = 'Deleted'` without garbling the text into noise characters.
+* **Form 6 Supplementary Additions:** Electors added during Special Summary Revisions (SSR) appear in supplement pages following the main mother roll. The system must ingest these seamlessly, appending them with `status = 'Supplementary_Addition'`.
 
 ---
 
@@ -124,7 +129,7 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
 * **SPEC-ING-05:** The system shall provide an autonomous crawler built on headless Chromium (via Playwright) capable of navigating the Chief Electoral Officer (CEO) Andhra Pradesh portal (`https://ceoandhra.nic.in`) and the national ECI portal.
 * **SPEC-ING-06:** Acoustic Voice CAPTCHA Solver:
   - The crawler shall automatically trigger the portal's `"Play Voice CAPTCHA"` audio stream.
-  - The audio stream (WAV buffer) shall be intercepted and fed into a local `faster-whisper` acoustic speech recognition model (`base` / `small` model running on `CTranslate2` C++ engine).
+  - The audio stream (WAV buffer) shall be intercepted, normalized to 16 kHz mono, and fed into a local `faster-whisper` acoustic speech recognition model (`base` / `small` model running on `CTranslate2` C++ engine).
   - The model shall transcribe the spoken numbers and characters in $< 1.5$ seconds with $\ge 96.5\%$ first-pass transcription accuracy.
 * **SPEC-ING-07:** Anti-Throttling & Resilience:
   - The crawler shall implement a token-bucket rate limiter enforcing a configurable maximum request rate (default: 1 request every 2.5 seconds per worker).
@@ -186,9 +191,10 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   The OCR engine shall extract and persist word-level and character-level optical confidence scores ($0.00$ to $1.00$) via Tesseract TSV output (`image_to_data`). Every elector record shall retain its mean card confidence and token-level confidence arrays.
 
 ### 4.4 Entity Extraction, Sanitization & Normalization
-* **FR-12 (Label Bleed Sanitization):**  
+* **FR-12 (Label Bleed Sanitization & Kerning Stripping):**  
   The parsing engine shall purge all OCR-corrupted permutations of field labels from elector demographic fields, including:
-  `Father`, `Fathar`, `Fether`, `Husband`, `Hushend`, `Hushand`, `Mother`, `Mothar`, `Guardian`, `Name`, `Mame`, `Namie`, `Narne`, `Narre`, `Nama`, `Narme`, `Namet`, `Warne`, `Nate`, `Nane`, `House`, `Howse`, `Number`, `Nurnber`, `Photo`, `Available`, `Age`, `Gender`, `Gencler`, `Ganclar`, `Gander`.
+  `Father`, `Fathar`, `Fether`, `Husband`, `Hushend`, `Hushand`, `Mother`, `Mothar`, `Guardian`, `Name`, `Mame`, `Namie`, `Narne`, `Narre`, `Nama`, `Narme`, `Namet`, `Warne`, `Nate`, `Nane`, `House`, `Howse`, `Number`, `Nurnber`, `Photo`, `Available`, `Age`, `Gender`, `Gencler`, `Ganclar`, `Gander`.  
+  *Special Kerning Rule:* Specifically strip `Narmne` (optical fusion of `Name` where `m` split into `rn` in serif font across 2,128 electors) when tokens $> 1$.
 * **FR-13 (EPIC Normalization & Lookalike Substitution):**  
   The parser shall validate all EPIC IDs against the standard ECI regular expression `^[A-Z]{3}[0-9]{7}$`. In the numeric suffix, controlled character lookalike substitutions shall be applied:
   - `O`, `o`, `Q`, `D`, `U` $\rightarrow$ `0`
@@ -287,7 +293,7 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   13. `normalized_door_no` (str)
   14. `age` (int)
   15. `gender` (str)
-  16. `linguistic_group` (str: `T`, `M`, `C`, `O`)
+  16. `linguistic_group` (str: `T`, `M`, `C`, `S`, `O`)
   17. `source_pdf_filename` (str)
   18. `source_pdf_sha256` (str)
   19. `page_no` (int)
@@ -300,10 +306,10 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   26. `mean_card_conf` (float, 0.00-1.00)
   27. `token_confidences_json` (JSON)
   28. `raw_ocr_dump` (str)
-  29. `status` (str: `Active`, `Quarantined`, `Re-OCR-Repaired`)
+  29. `status` (str: `Active`, `Deleted`, `Supplementary_Addition`, `Quarantined`)
   30. `audit_trail` (JSON array of transformations)
   31. `created_at` (ISO timestamp)
-  32. `engine_version` (str: `DEIP-2.0.0`)
+  32. `engine_version` (str: `DEIP-2.1.0`)
 * **FR-29 (Card Crop Blob Storage):**  
   Every detected voter card crop shall be persisted as a lossless PNG in object storage (`MinIO / S3`), keyed by `s3://crops/{ac}/{part}/{box_id}.png`.
 * **FR-30 (Forensic Time-Machine Replay API & CLI):**  
@@ -325,6 +331,31 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   The platform shall provide real-time status streaming to the operational dashboard via WebSockets and Server-Sent Events (SSE), transmitting parts completed, cards processed per second, queue lag, and anomaly rates.
 * **FR-35 (Shadow / Dry-Run Verification Mode):**  
   The engine shall support a `--shadow-mode` flag where new algorithms run against historical baseline outputs, generating diff reports showing exact token changes before modifying the master database.
+
+### 4.10 Extended Forensic & Linguistic Requirements (Derived from Historical Audits)
+* **FR-36 (Phonotactic Illegal N-Gram & Consonant Stutter Pruning):**  
+  The token engine shall detect impossible non-Indic consonant clusters (`gq`, `wq`, `zq`, `pq`, `xd`, `dx`, `kf`, `jc`, `gb`, `pb`) and map optical misreads of `q` in Hindu contexts to `g`, `th`, or `o` (e.g. `Qanga` $\rightarrow$ `Ganga`, `Jyqthi` $\rightarrow$ `Jyothi`, `Jyoqtula` $\rightarrow$ `Jyothula`). Quadruple consonant stutters shall be collapsed to authentic geminates (`Appparao` $\rightarrow$ `Apparao`).
+* **FR-37 (Terminal Syllable Slicing & Boundary Cutoff Restorations):**  
+  The system shall restore truncated syllables clipped by fixed card margins:
+  - `-ulu` honorifics: `Thrimurthull` $\rightarrow$ `Thrimurthulu`, `Veeraraghavull` $\rightarrow$ `Veeraraghavulu`, `Trimurthull` $\rightarrow$ `Trimurthulu`, `Amull` $\rightarrow$ `Amulu`, `Abbull` $\rightarrow$ `Abbulu`.
+  - `-needi` village surnames: `Pabbineed` $\rightarrow$ `Pabbineedi`, `Karneed` $\rightarrow$ `Karneedi`, `Yarramneed` $\rightarrow$ `Yarramneedi`.
+  - Terminal `l` $\rightarrow$ `i` in female names: `-shml` $\rightarrow$ `-shmi`, `-vatl` $\rightarrow$ `-vati`, `-devl` $\rightarrow$ `-devi`.
+* **FR-38 (Compound Ungluing of Fused Dot-Matrix Tokens):**  
+  The parser shall identify and safely unglue multi-word names merged by OCR whitespace drops:
+  `Meerabishaik` $\rightarrow$ `Meera Bi Shaik`, `Alimohamed` $\rightarrow$ `Ali Mohamed`, `Mahammabunnisha` $\rightarrow$ `Mohammad Unnisa`, `Ikbalaahmadpasha` $\rightarrow$ `Iqbal Ahmad Pasha`.
+* **FR-39 (Single-Word Elector & Patronymic Acceptance):**  
+  The parser shall support valid single-word given names and single-word relations common in Islamic and tribal nomenclature (e.g. `Ayesha`, `Subhan`, father listed simply as `Basha` or `Shaik`) without flagging them as missing surname errors.
+* **FR-40 (Linguistic Demographic Classification Engine):**  
+  The platform shall classify every elector into verified cultural-linguistic groups:
+  - **Group `T` (Telugu-Indic):** Classical ajanta vowel-ended surnames.
+  - **Group `M` (Muslim):** Arabic, Persian, and Urdu nomenclature.
+  - **Group `C` (Christian):** Biblical and Telugu-Christian names.
+  - **Group `S` (Classical Sanskrit/Halanta):** North Indian / Sanskrit loan roots.
+  *Boundary Guards:* Strictly enforce disqualifiers so `Bhanu`, `Valli`, `Yakub`, `Nagur`, `Kaja`, `Md`, `Abhishek`, and `Mounisha` never leak into incorrect demographic groups.
+* **FR-41 (Bilingual Cross-Script Disambiguation):**  
+  For bilingual electoral rolls, where English OCR confidence on a name token is $< 0.70$, the system shall OCR the parallel Telugu script box (`tel` traineddata) to cross-verify and disambiguate vowels and retroflex consonants.
+* **FR-42 (Form 7 Deletion Strikethrough Processing):**  
+  On deletion supplement pages, the system shall detect diagonal cancel lines via Hough transforms, flag the elector as `STATUS_DELETED`, and preserve the underlying demographic record for administrative audit.
 
 ---
 
@@ -354,6 +385,10 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
   Worker fleets on Kubernetes / OpenShift shall scale dynamically between 4 and 64 replicas via KEDA based on RabbitMQ queue depth.
 * **NFR-12 (Data Retention & Encryption at Rest):**  
   All elector database records and MinIO crop blobs shall support encryption at rest (AES-256) and immutable audit log retention.
+* **NFR-13 (Zero Demographic Drift):**  
+  Successive software releases must produce $\le 0.01\%$ variance in aggregate demographic group totals (`T`, `M`, `C`, `S`) unless explicitly audited and approved.
+* **NFR-14 (Deterministic Traceability):**  
+  Every automated modification applied to an elector record must contain a unique `rule_id`, exact `before` string, exact `after` string, timestamp, and supporting consensus evidence in the `audit_trail` array.
 
 ---
 
@@ -419,6 +454,29 @@ The platform shall support two primary ingestion modes and an automatic hybrid f
 
 ---
 
+### Use Case UC-05: Ingestion of Bilingual Rolls & Deletion Strikethrough Handling
+- **Primary Actor:** Ingestion Pipeline
+- **Trigger:** Scanned roll contains Form 7 deletion supplement pages.
+- **Main Flow:**
+  1. Layout worker encounters supplement page marked `"List of Deletions"`.
+  2. Hough transform detects heavy diagonal strikethrough vector intersecting the voter card centroid.
+  3. Worker flags card record as `status = 'Deleted'`.
+  4. OCR engine executes with strikethrough suppression filter, extracting the underlying elector name and EPIC ID.
+  5. Record committed to database marked as deleted, retaining full provenance and crop coordinates.
+
+---
+
+### Use Case UC-06: Demographic Classification & Boundary Guard Enforcement
+- **Primary Actor:** Linguistic Classifier Worker
+- **Trigger:** Record arrives with ambiguous token `Bhanu` or `Pasham`.
+- **Main Flow:**
+  1. Classifier evaluates elector `Bhanu Prakash Singuluri`.
+  2. Standalone Islamic rule triggers on `Bhanu`, but Boundary Guard activates: `Bhanu` paired with Hindu deity given name `Prakash` and Telugu surname `Singuluri`.
+  3. Classifier assigns Group `T` (Telugu-Indic), suppressing false-positive minority classification.
+  4. Elector `Nagaraju Pasham` evaluated: `Pasham` detected, absolute cultural safeguard locks group to `T`.
+
+---
+
 ## 7. Multi-Level Verification & Acceptance Quality Gates
 
 The system shall be formally verified against 5 rigorous quality gates prior to production sign-off:
@@ -477,4 +535,7 @@ The system shall be formally verified against 5 rigorous quality gates prior to 
 | **FR-30, 31** | Time-Machine & Quarantine | API Gateway & DLQ | Gate 3 |
 | **FR-32, 33, 34**| Observability | Prometheus & WebSocket Gateway | Gate 5 |
 | **FR-35** | Shadow Mode | `ReconciliationEngine` | Gate 5 |
+| **FR-36, 37, 38**| N-Gram & Cutoff Repairs | `LinguisticSuite` | Gate 1 & 4 |
+| **FR-39, 40** | Demographic Classification | `ClassifierService` | Gate 4 |
+| **FR-41, 42** | Bilingual & Deletion Rolls| `LayoutWorker` & `OCRWorker` | Gate 3 & 5 |
 | **SPEC-ING-01..08**| Dual-Source Ingestion | Local Scanner & Playwright Crawler | Gate 5 |
