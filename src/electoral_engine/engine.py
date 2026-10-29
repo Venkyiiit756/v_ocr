@@ -39,7 +39,6 @@ class DualZoneOCREngine:
         self.tess_exe = tesseract_cmd or shutil.which('tesseract') or r'C:\Users\vamsi\Tesseract-OCR\tesseract.exe'
         self.user_words_path = user_words_path
         self.ocr_lang = ocr_lang
-        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
     def _run_tesseract(self, img_gray: np.ndarray, config: str, psm: int = 7, lang: str = "eng") -> str:
         padded = cv2.copyMakeBorder(img_gray, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
@@ -102,9 +101,10 @@ class DualZoneOCREngine:
             if len(cand) >= 7:
                 epic_text = cand
         
-        # 3. Zone B (Demographics): 1.8x scaling + CLAHE contrast normalization, PSM 6
+        # 3. Zone B (Demographics): 1.8x scaling + thread-local CLAHE contrast normalization, PSM 6
         scaled_b = cv2.resize(zone_b, (0, 0), fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
-        enhanced_b = self.clahe.apply(scaled_b)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced_b = clahe.apply(scaled_b)
         body_config = "-c tessedit_char_blacklist=§©®¢°~\\{}[]|`^$#@*"
         if self.user_words_path and os.path.exists(self.user_words_path):
             body_config += f" -c user_words_file={self.user_words_path}"
@@ -139,61 +139,69 @@ class ElectoralPipelineEngine:
         Renders a page at 300 DPI native grayscale, executes IoU NMS card detection,
         runs Dual-Zone OCR, and returns 32-field Provenance records.
         """
-        doc = pymupdf.open(pdf_path)
-        page = doc[page_num]
-        pix = page.get_pixmap(dpi=self.target_dpi)
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, pix.n))
-        if pix.n == 4:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        else:
-            img = img.copy()
-        del pix
-        doc.close()
+        last_err = None
+        for attempt in range(3):
+            try:
+                doc = pymupdf.open(pdf_path)
+                page = doc[page_num]
+                pix = page.get_pixmap(dpi=self.target_dpi)
+                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, pix.n))
+                if pix.n == 4:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                else:
+                    img = img.copy()
+                del pix
+                doc.close()
 
-        # Compute SHA-256 for physical file provenance
-        with open(pdf_path, 'rb') as f:
-            pdf_sha256 = hashlib.sha256(f.read()).hexdigest()
-        pdf_basename = os.path.basename(pdf_path)
+                # Compute SHA-256 for physical file provenance
+                with open(pdf_path, 'rb') as f:
+                    pdf_sha256 = hashlib.sha256(f.read()).hexdigest()
+                pdf_basename = os.path.basename(pdf_path)
 
-        # Detect Card Boxes with IoU NMS + Indic Padding
-        boxes = self.detector.detect_boxes(img)
-        page_records = []
-        gray_page = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                # Detect Card Boxes with IoU NMS + Indic Padding
+                boxes = self.detector.detect_boxes(img)
+                page_records = []
+                gray_page = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        for b_idx, (x, y, w, h) in enumerate(boxes, 1):
-            card_crop = gray_page[y:y+h, x:x+w]
-            
-            # Check for Form 7 Deletion Strikethrough
-            restored_crop, is_strike = self.detector.detect_and_recover_strikethrough(card_crop)
-            
-            # Run Dual-Zone OCR
-            ocr_res = self.dual_ocr.ocr_card(restored_crop)
-            
-            # Construct Metadata & Parse
-            metadata = {
-                'ac_no': ac_no,
-                'part_no': part_no,
-                'box_index': b_idx,
-                'page_no': page_num + 1,
-                'source_pdf_filename': pdf_basename,
-                'source_pdf_sha256': pdf_sha256,
-                'bbox_pts': [x, y, w, h],
-                'mean_card_conf': ocr_res['mean_confidence'],
-                'status': 'Deleted' if is_strike else 'Active'
-            }
-            
-            record = self.parser.parse_card(ocr_res['raw_dump'], fallback_sno=b_idx, metadata=metadata)
-            
-            # Direct override if Dual-Zone Zone A extracted explicit EPIC
-            if ocr_res['epic_text']:
-                norm_epic = self.parser.normalize_epic_candidate(ocr_res['epic_text'])
-                if norm_epic:
-                    record['epic_no'] = norm_epic
+                for b_idx, (x, y, w, h) in enumerate(boxes, 1):
+                    card_crop = gray_page[y:y+h, x:x+w]
+                    
+                    # Check for Form 7 Deletion Strikethrough
+                    restored_crop, is_strike = self.detector.detect_and_recover_strikethrough(card_crop)
+                    
+                    # Run Dual-Zone OCR
+                    ocr_res = self.dual_ocr.ocr_card(restored_crop)
+                    
+                    # Construct Metadata & Parse
+                    metadata = {
+                        'ac_no': ac_no,
+                        'part_no': part_no,
+                        'box_index': b_idx,
+                        'page_no': page_num + 1,
+                        'source_pdf_filename': pdf_basename,
+                        'source_pdf_sha256': pdf_sha256,
+                        'bbox_pts': [x, y, w, h],
+                        'mean_card_conf': ocr_res['mean_confidence'],
+                        'status': 'Deleted' if is_strike else 'Active'
+                    }
+                    
+                    record = self.parser.parse_card(ocr_res['raw_dump'], fallback_sno=b_idx, metadata=metadata)
+                    
+                    # Direct override if Dual-Zone Zone A extracted explicit EPIC
+                    if ocr_res['epic_text']:
+                        norm_epic = self.parser.normalize_epic_candidate(ocr_res['epic_text'])
+                        if norm_epic:
+                            record['epic_no'] = norm_epic
 
-            page_records.append(record)
+                    page_records.append(record)
 
-        del img, gray_page
-        return page_records
+                del img, gray_page
+                return page_records
+            except Exception as e:
+                last_err = e
+                time.sleep(0.5)
+
+        raise last_err
 
     def process_roll_pdf(self, pdf_path: str, part_no: int, ac_no: int = 37, cache_prefix: str = "deip_cache") -> List[Dict[str, Any]]:
         """
